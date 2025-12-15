@@ -1,0 +1,22 @@
+TEAMS = [
+    "Athletico-PR",
+    "Atlético-MG",
+    "Bahia",
+    "Botafogo",
+    "Chapecoense",
+    "Corinthians",
+    "Coritiba",
+    "Cruzeiro",
+    "Flamengo",
+    "Fluminense",
+    "Grêmio",
+    "Internacional",
+    "Mirassol",
+    "Palmeiras",
+    "Red Bull Bragantino",
+    "Remo",
+    "Santos",
+    "São Paulo",
+    "Vasco",
+    "Vitória"
+]
