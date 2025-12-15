@@ -6,11 +6,11 @@ from db.supabase import supabase
 
 def get_bucket_start():
     """
-    Retorna o início da hora anterior (UTC).
+    Retorna o início da hora anterior (UTC),
+    SEM timezone (compatível com Postgres).
     """
-    now = datetime.now(timezone.utc)
+    now = datetime.utcnow()
     return now.replace(minute=0, second=0, microsecond=0) - timedelta(hours=1)
-
 
 def main():
     bucket_start = get_bucket_start()
