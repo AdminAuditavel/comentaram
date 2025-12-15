@@ -1,0 +1,10 @@
+import os
+from supabase import create_client
+from dotenv import load_dotenv
+
+load_dotenv()
+
+SUPABASE_URL = os.getenv("https://fzskxuthignjrqncaeah.supabase.co")
+SUPABASE_KEY = os.getenv("eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6c2t4dXRoaWduanJxbmNhZWFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4MzAzNzUsImV4cCI6MjA4MTQwNjM3NX0.z8ObGPepU77RGG6KcsKBqpAbiQsNysTiXfYeWXckUqE")
+
+supabase = create_client(https://fzskxuthignjrqncaeah.supabase.co, eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImZ6c2t4dXRoaWduanJxbmNhZWFoIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjU4MzAzNzUsImV4cCI6MjA4MTQwNjM3NX0.z8ObGPepU77RGG6KcsKBqpAbiQsNysTiXfYeWXckUqE)
