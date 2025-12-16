@@ -27,3 +27,9 @@ def get_ranking():
 def read_ranking():
     ranking = get_ranking()
     return {"ranking": ranking}
+
+@app.get("/")
+def read_root():
+    return {"message": "API is running! Go to /ranking for the data."}
+
+
