@@ -18,12 +18,11 @@ supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 def read_root():
     return {"message": "Pulso Esportivo API funcionando!"}
 
-# Endpoint de exemplo para pegar dados do Supabase
-@app.get("/data")
-async def get_data():
+# Endpoint para pegar dados da tabela daily_ranking
+@app.get("/daily_ranking")
+async def get_daily_ranking():
     try:
-        response = supabase.table("sua_tabela").select("*").execute()
+        response = supabase.table("daily_ranking").select("*").execute()
         return {"data": response.data}
     except Exception as e:
         return {"error": str(e)}
-
