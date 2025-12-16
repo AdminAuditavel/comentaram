@@ -1,5 +1,5 @@
 from fastapi import FastAPI
-from db.supabase import supabase
+from supabase import create_client, Client
 import os
 from dotenv import load_dotenv
 
@@ -8,27 +8,22 @@ load_dotenv()
 
 app = FastAPI()
 
-# Carregar as variáveis do .env
+# Configurações do Supabase
 SUPABASE_URL = os.getenv("SUPABASE_URL")
 SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+supabase: Client = create_client(SUPABASE_URL, SUPABASE_KEY)
 
-# Rota de teste para a raiz
+# Endpoint de teste
 @app.get("/")
 def read_root():
-    return {"message": "API is running! Go to /ranking for the data."}
+    return {"message": "Pulso Esportivo API funcionando!"}
 
-# Função para calcular o IAP e gerar o ranking
-def get_ranking():
-    # Buscar os dados do ranking na tabela 'daily_ranking' (ajustado)
-    ranking_data = (
-        supabase.table("daily_ranking")  # Alterado para a tabela correta
-        .select("club_id, rank_position, score, volume_total")
-        .execute()
-        .data
-    )
-    return ranking_data
+# Endpoint de exemplo para pegar dados do Supabase
+@app.get("/data")
+async def get_data():
+    try:
+        response = supabase.table("sua_tabela").select("*").execute()
+        return {"data": response.data}
+    except Exception as e:
+        return {"error": str(e)}
 
-@app.get("/ranking")
-def read_ranking():
-    ranking = get_ranking()
-    return {"ranking": ranking}
