@@ -1,58 +1,29 @@
-from fastapi import FastAPI, Query
-from api.deps import supabase
-from datetime import date
+from fastapi import FastAPI
+from db.supabase import supabase
+import os
+from dotenv import load_dotenv
 
-app = FastAPI(title="Pulso Esportivo API", version="v1")
+# Carregar as variáveis de ambiente
+load_dotenv()
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
+app = FastAPI()
 
-@app.get("/ranking/today")
-def ranking_today():
-    data = (
-        supabase
-        .table("daily_iap_ranking")
-        .select("*")
-        .order("rank_position")
+# Carregar as variáveis do .env
+SUPABASE_URL = os.getenv("SUPABASE_URL")
+SUPABASE_KEY = os.getenv("SUPABASE_KEY")
+
+# Função para calcular o IAP e gerar o ranking
+def get_ranking():
+    # Buscar os dados do ranking (essa parte depende de como você está armazenando os dados)
+    ranking_data = (
+        supabase.table("ranking")  # Ajuste com o nome da sua tabela
+        .select("club_id, rank_position, score, volume_total")
         .execute()
         .data
     )
-    return data
+    return ranking_data
 
-@app.get("/ranking/by-date")
-def ranking_by_date(d: date = Query(..., description="YYYY-MM-DD")):
-    data = (
-        supabase
-        .table("daily_iap_ranking")
-        .select("*")
-        .eq("aggregation_date", str(d))
-        .order("rank_position")
-        .execute()
-        .data
-    )
-    return data
-
-@app.get("/clubs")
-def clubs():
-    return (
-        supabase
-        .table("clubs")
-        .select("id, name_official, name_short")
-        .eq("active", True)
-        .execute()
-        .data
-    )
-
-@app.get("/clubs/{club_id}/history")
-def club_history(club_id: str, limit: int = 30):
-    return (
-        supabase
-        .table("daily_iap")
-        .select("aggregation_date, iap_score, volume_total")
-        .eq("club_id", club_id)
-        .order("aggregation_date", desc=True)
-        .limit(limit)
-        .execute()
-        .data
-    )
+@app.get("/ranking")
+def read_ranking():
+    ranking = get_ranking()
+    return {"ranking": ranking}
