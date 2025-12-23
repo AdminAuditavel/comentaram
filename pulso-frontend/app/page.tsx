@@ -1,5 +1,7 @@
 //pulso-frontend/app/page.tsx
 
+"use client";
+
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import { Line } from 'react-chartjs-2';
