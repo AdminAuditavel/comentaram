@@ -1,6 +1,6 @@
 # Pulso Esportivo
 
-Pulso Esportivo é uma plataforma pública que mostra quais times estão gerando
+Pulso é uma plataforma pública que mostra quais temas/assuntos estão gerando
 mais atenção na internet, usando apenas dados públicos e métricas agregadas.
 
 ## Versão atual
