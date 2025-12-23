@@ -13,28 +13,50 @@ interface RankingData {
   score: number;
 }
 
+interface ClubData {
+  id: string;
+  name_official: string;
+}
+
+interface SourceData {
+  id: string;
+  name: string;
+}
+
 export default function Home() {
   const [rankingData, setRankingData] = useState<RankingData[]>([]);
+  const [clubData, setClubData] = useState<ClubData[]>([]);
+  const [sourceData, setSourceData] = useState<SourceData[]>([]);
   const [loading, setLoading] = useState<boolean>(true);
 
   useEffect(() => {
     // Função para buscar dados do ranking diário
-    const fetchRankingData = async () => {
+    const fetchData = async () => {
       try {
-        const response = await axios.get('https://jubilant-halibut-pj4w5gr4q7g6f647g-8000.app.github.dev/daily_ranking');
-        setRankingData(response.data.data);
+        // Buscar dados do ranking diário
+        const rankingResponse = await axios.get('https://pulso-publico.vercel.app/daily_ranking');
+        setRankingData(rankingResponse.data.data);
+
+        // Buscar dados dos clubes
+        const clubsResponse = await axios.get('https://pulso-publico.vercel.app/clubs');
+        setClubData(clubsResponse.data.data);
+
+        // Buscar fontes de dados
+        const sourcesResponse = await axios.get('https://pulso-publico.vercel.app/sources');
+        setSourceData(sourcesResponse.data.data);
+
         setLoading(false);
       } catch (error) {
-        console.error('Erro ao buscar dados do ranking:', error);
+        console.error('Erro ao buscar dados:', error);
       }
     };
 
-    fetchRankingData();
+    fetchData();
   }, []);
 
   // Preparar os dados para o gráfico
   const chartData = {
-    labels: rankingData.map(item => item.club_id), // Usando o ID do clube como rótulo (pode ser ajustado)
+    labels: rankingData.map(item => item.club_id), // Usando o ID do clube como rótulo
     datasets: [
       {
         label: 'Ranking Diário',
@@ -61,10 +83,21 @@ export default function Home() {
               <h2 className="text-xl text-black dark:text-zinc-50">Ranking dos Clubes</h2>
               <Line data={chartData} />
             </div>
-            <ul className="mt-6 text-black dark:text-zinc-50">
-              {rankingData.map(item => (
-                <li key={item.club_id}>
-                  {item.club_id}: {item.score} pontos
+
+            <h2 className="text-xl text-black dark:text-zinc-50 mt-6">Clubes</h2>
+            <ul className="text-black dark:text-zinc-50">
+              {clubData.map(club => (
+                <li key={club.id}>
+                  {club.name_official}
+                </li>
+              ))}
+            </ul>
+
+            <h2 className="text-xl text-black dark:text-zinc-50 mt-6">Fontes de Dados</h2>
+            <ul className="text-black dark:text-zinc-50">
+              {sourceData.map(source => (
+                <li key={source.id}>
+                  {source.name}
                 </li>
               ))}
             </ul>
