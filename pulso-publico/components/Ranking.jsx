@@ -3,6 +3,7 @@
 'use client';
 
 import { useEffect, useMemo, useState } from 'react';
+import Link from 'next/link';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -45,7 +46,7 @@ export default function Ranking() {
   const [error, setError] = useState(null);
 
   const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD
-  const [selectedClub, setSelectedClub] = useState(''); // nome do clube
+  const [selectedClub, setSelectedClub] = useState(''); // nome
 
   const fetchData = async (date) => {
     setLoading(true);
@@ -68,14 +69,12 @@ export default function Ranking() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // Lista de clubes para o dropdown (a partir dos dados carregados)
   const clubOptions = useMemo(() => {
     if (!Array.isArray(data)) return [];
     const names = data.map(getClubName).filter((n) => n && n !== '—');
     return Array.from(new Set(names)).sort((a, b) => a.localeCompare(b));
   }, [data]);
 
-  // Base rows (com valor numérico) — ainda sem filtro por clube
   const baseRows = useMemo(() => {
     if (!Array.isArray(data)) return [];
     return data
@@ -83,17 +82,11 @@ export default function Ranking() {
         const raw = item?.score ?? item?.iap;
         const value = toNumber(raw);
         const club = getClubName(item);
-        return {
-          key: item?.club_id ?? `${club}-${Math.random()}`,
-          club,
-          value,
-          rawItem: item,
-        };
+        return { club, value, rawItem: item };
       })
       .filter((r) => r.value !== null);
   }, [data]);
 
-  // Aplica filtro por clube (afeta tabela e gráfico)
   const rows = useMemo(() => {
     if (!selectedClub) return baseRows;
     return baseRows.filter((r) => r.club === selectedClub);
@@ -110,10 +103,7 @@ export default function Ranking() {
     return {
       responsive: true,
       maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { enabled: true },
-      },
+      plugins: { legend: { display: false }, tooltip: { enabled: true } },
       scales: { y: { beginAtZero: true } },
     };
   }, []);
@@ -132,6 +122,8 @@ export default function Ranking() {
 
   if (!data || !Array.isArray(data) || data.length === 0) return <div>Nenhum dado disponível</div>;
 
+  const tableItems = selectedClub ? rows.map((r) => r.rawItem) : data;
+
   return (
     <div style={{ display: 'grid', gap: 16 }}>
       <h2 style={{ margin: 0 }}>Ranking Diário</h2>
@@ -148,7 +140,6 @@ export default function Ranking() {
 
       {/* FILTROS */}
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-        {/* Data (auto-aplica) */}
         <label style={{ fontSize: 14 }}>Data:</label>
         <input
           type="date"
@@ -156,11 +147,9 @@ export default function Ranking() {
           onChange={(e) => {
             const d = e.target.value;
             setSelectedDate(d);
-            // ao trocar de data, mantém o clube selecionado (você pode mudar isso depois)
-            fetchData(d);
+            fetchData(d); // auto-aplica
           }}
         />
-
         <button
           onClick={() => {
             setSelectedDate('');
@@ -172,13 +161,8 @@ export default function Ranking() {
           Hoje/Último
         </button>
 
-        {/* Clube (filtra localmente) */}
         <label style={{ fontSize: 14, marginLeft: 8 }}>Clube:</label>
-        <select
-          value={selectedClub}
-          onChange={(e) => setSelectedClub(e.target.value)}
-          style={{ padding: 4 }}
-        >
+        <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} style={{ padding: 4 }}>
           <option value="">Todos</option>
           {clubOptions.map((name) => (
             <option key={name} value={name}>
@@ -187,16 +171,12 @@ export default function Ranking() {
           ))}
         </select>
 
-        <button
-          onClick={() => setSelectedClub('')}
-          disabled={!selectedClub}
-          title="Limpar filtro de clube"
-        >
+        <button onClick={() => setSelectedClub('')} disabled={!selectedClub} title="Limpar filtro de clube">
           Limpar clube
         </button>
       </div>
 
-      {/* GRÁFICO */}
+      {/* GRÁFICO (ranking do dia) */}
       <div style={{ height: 360, width: '100%' }}>
         <Bar data={chartData} options={chartOptions} />
       </div>
@@ -211,21 +191,27 @@ export default function Ranking() {
           </tr>
         </thead>
         <tbody>
-          {(selectedClub ? rows.map((r) => r.rawItem) : data).map((item, idx) => (
-            <tr key={item.club_id ?? idx}>
-              <td style={{ padding: 8 }}>{idx + 1}</td>
-              <td style={{ padding: 8 }}>{getClubName(item)}</td>
-              <td style={{ padding: 8 }}>{item.score ?? item.iap ?? '—'}</td>
-            </tr>
-          ))}
+          {tableItems.map((item, idx) => {
+            const clubName = getClubName(item);
+            const href = `/club/${encodeURIComponent(clubName)}`;
+            return (
+              <tr key={item.club_id ?? idx}>
+                <td style={{ padding: 8 }}>{idx + 1}</td>
+                <td style={{ padding: 8 }}>
+                  {clubName && clubName !== '—' ? (
+                    <Link href={href} style={{ textDecoration: 'underline' }}>
+                      {clubName}
+                    </Link>
+                  ) : (
+                    clubName
+                  )}
+                </td>
+                <td style={{ padding: 8 }}>{item.score ?? item.iap ?? '—'}</td>
+              </tr>
+            );
+          })}
         </tbody>
       </table>
-
-      {rows.length === 0 ? (
-        <div style={{ fontSize: 12, opacity: 0.8 }}>
-          Observação: nenhuma linha tinha valor numérico em <code>score</code> ou <code>iap</code> para o filtro atual.
-        </div>
-      ) : null}
     </div>
   );
 }
