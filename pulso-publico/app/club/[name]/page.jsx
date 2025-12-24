@@ -1,40 +1,25 @@
 // app/club/[name]/page.jsx
-
 'use client';
 
-import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
-import { useParams } from 'next/navigation';
+import Link from 'next/link';
 import {
   Chart as ChartJS,
   CategoryScale,
   LinearScale,
   PointElement,
   LineElement,
+  BarElement,
   Tooltip,
   Legend,
 } from 'chart.js';
-import { Line } from 'react-chartjs-2';
+import { Line, Bar } from 'react-chartjs-2';
 
-ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, Tooltip, Legend);
+ChartJS.register(CategoryScale, LinearScale, PointElement, LineElement, BarElement, Tooltip, Legend);
 
 function toNumber(x) {
   const n = typeof x === 'string' ? Number(String(x).replace(',', '.')) : Number(x);
   return Number.isFinite(n) ? n : null;
-}
-function fmt2(n) {
-  const v = toNumber(n);
-  return v === null ? '—' : v.toFixed(2);
-}
-function fmtInt(n) {
-  const v = toNumber(n);
-  return v === null ? '—' : String(Math.round(v));
-}
-function pct(delta, base) {
-  const d = toNumber(delta);
-  const b = toNumber(base);
-  if (d === null || b === null || b === 0) return '—';
-  return ((d / b) * 100).toFixed(2) + '%';
 }
 
 function normalizeSeries(series) {
@@ -42,8 +27,6 @@ function normalizeSeries(series) {
     .map((r) => ({
       date: r?.date ? String(r.date).slice(0, 10) : null,
       value: toNumber(r?.value),
-      rank_position: toNumber(r?.rank_position),
-      volume_total: toNumber(r?.volume_total),
     }))
     .filter((r) => r.date && r.value !== null);
 
@@ -51,274 +34,237 @@ function normalizeSeries(series) {
   return arr;
 }
 
-export default function ClubPage() {
-  const params = useParams();
-  const rawName = params?.name;
+export default function ClubPage({ params }) {
+  const clubName = useMemo(() => decodeURIComponent(params?.name || ''), [params]);
 
-  const clubName = useMemo(() => {
-    if (!rawName) return '';
-    const v = Array.isArray(rawName) ? rawName[0] : rawName;
-    try {
-      return decodeURIComponent(v);
-    } catch {
-      return v;
-    }
-  }, [rawName]);
+  const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD (opcional)
+  const [snapshot, setSnapshot] = useState(null);
+  const [snapLoading, setSnapLoading] = useState(true);
+  const [snapError, setSnapError] = useState(null);
 
   const [series, setSeries] = useState([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(null);
+  const [seriesLoading, setSeriesLoading] = useState(true);
+  const [seriesError, setSeriesError] = useState(null);
 
-  // Comparação
-  const [clubs, setClubs] = useState([]);
-  const [clubsLoading, setClubsLoading] = useState(true);
-  const [compareClub, setCompareClub] = useState(''); // name_short
-  const [compareSeries, setCompareSeries] = useState([]);
-  const [compareLoading, setCompareLoading] = useState(false);
-  const [compareError, setCompareError] = useState(null);
-
-  const fetchSeries = async (name) => {
-    setLoading(true);
-    setError(null);
+  async function fetchSnapshot(date) {
+    setSnapLoading(true);
+    setSnapError(null);
     try {
-      const res = await fetch(`/api/club_series?club=${encodeURIComponent(name)}&limit_days=180`);
+      const qs = new URLSearchParams();
+      qs.set('club', clubName);
+      if (date) qs.set('date', date);
+
+      const res = await fetch(`/api/club_snapshot?${qs.toString()}`);
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(`Erro ao buscar snapshot (${res.status}) ${text ? `- ${text}` : ''}`);
+      }
+      const json = await res.json();
+      setSnapshot(json);
+    } catch (e) {
+      setSnapError(e);
+      setSnapshot(null);
+    } finally {
+      setSnapLoading(false);
+    }
+  }
+
+  async function fetchSeries() {
+    setSeriesLoading(true);
+    setSeriesError(null);
+    try {
+      const res = await fetch(`/api/club_series?club=${encodeURIComponent(clubName)}&limit_days=180`);
       if (!res.ok) throw new Error(`Erro ao buscar série do clube (${res.status})`);
       const json = await res.json();
-      setSeries(Array.isArray(json) ? json : []);
-    } catch (err) {
-      setError(err);
+      setSeries(normalizeSeries(json));
+    } catch (e) {
+      setSeriesError(e);
+      setSeries([]);
     } finally {
-      setLoading(false);
+      setSeriesLoading(false);
     }
-  };
-
-  const fetchClubs = async () => {
-    setClubsLoading(true);
-    try {
-      const res = await fetch('/api/clubs');
-      if (!res.ok) throw new Error(`Erro ao buscar lista de clubes (${res.status})`);
-      const json = await res.json();
-      setClubs(Array.isArray(json) ? json : []);
-    } catch {
-      setClubs([]);
-    } finally {
-      setClubsLoading(false);
-    }
-  };
-
-  const fetchCompare = async (name) => {
-    setCompareLoading(true);
-    setCompareError(null);
-    try {
-      const res = await fetch(`/api/club_series?club=${encodeURIComponent(name)}&limit_days=180`);
-      if (!res.ok) throw new Error(`Erro ao buscar série do clube comparado (${res.status})`);
-      const json = await res.json();
-      setCompareSeries(Array.isArray(json) ? json : []);
-    } catch (err) {
-      setCompareError(err);
-      setCompareSeries([]);
-    } finally {
-      setCompareLoading(false);
-    }
-  };
+  }
 
   useEffect(() => {
-    if (clubName) fetchSeries(clubName);
+    fetchSnapshot('');
+    fetchSeries();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [clubName]);
 
   useEffect(() => {
-    fetchClubs();
-  }, []);
+    // quando mudar a data, atualiza apenas o snapshot (painel)
+    fetchSnapshot(selectedDate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedDate]);
 
-  // Se trocar de clube na URL, limpa comparação automaticamente (evita confusão)
-  useEffect(() => {
-    setCompareClub('');
-    setCompareSeries([]);
-    setCompareError(null);
-    setCompareLoading(false);
-  }, [clubName]);
-
-  const rows = useMemo(() => normalizeSeries(series), [series]);
-  const rowsCompare = useMemo(() => normalizeSeries(compareSeries), [compareSeries]);
-
-  // KPIs do clube principal (igual ao passo anterior)
-  const kpi = useMemo(() => {
-    if (!rows.length) return null;
-    const last = rows[rows.length - 1];
-    const prev = rows.length >= 2 ? rows[rows.length - 2] : null;
-    const delta = prev ? (last.value ?? 0) - (prev.value ?? 0) : null;
-
+  const lineData = useMemo(() => {
     return {
-      lastDate: last.date,
-      iap: last.value,
-      rank: last.rank_position,
-      volume: last.volume_total,
-      delta,
-      deltaPct: prev ? pct(delta, prev.value) : '—',
-      prevDate: prev?.date ?? null,
+      labels: series.map((p) => p.date),
+      datasets: [
+        {
+          label: 'IAP (série)',
+          data: series.map((p) => p.value),
+          borderColor: '#2563EB',
+          backgroundColor: '#2563EB',
+          borderWidth: 2,
+          pointRadius: 2,
+          pointHoverRadius: 4,
+        },
+      ],
     };
-  }, [rows]);
+  }, [series]);
 
-  // Monta labels alinhadas (união de datas)
-  const aligned = useMemo(() => {
-    const dates = new Set();
-    rows.forEach((r) => dates.add(r.date));
-    rowsCompare.forEach((r) => dates.add(r.date));
-    const labels = Array.from(dates).sort((a, b) => String(a).localeCompare(String(b)));
-
-    const mapA = new Map(rows.map((r) => [r.date, r.value]));
-    const mapB = new Map(rowsCompare.map((r) => [r.date, r.value]));
-
-    const a = labels.map((d) => (mapA.has(d) ? mapA.get(d) : null));
-    const b = labels.map((d) => (mapB.has(d) ? mapB.get(d) : null));
-
-    return { labels, a, b };
-  }, [rows, rowsCompare]);
-
-  const chartData = useMemo(() => {
-    const datasets = [
-      { label: clubName || 'Clube', data: aligned.a },
-    ];
-
-    if (compareClub) {
-      datasets.push({ label: compareClub, data: aligned.b });
-    }
-
-    return { labels: aligned.labels, datasets };
-  }, [aligned, clubName, compareClub]);
-
-  const chartOptions = useMemo(() => {
+  const lineOptions = useMemo(() => {
     return {
       responsive: true,
       maintainAspectRatio: false,
       plugins: { legend: { display: true }, tooltip: { enabled: true } },
       scales: { y: { beginAtZero: true } },
+      elements: { line: { tension: 0.25 } },
+    };
+  }, []);
+
+  // Mini “drivers” (Volume vs Sentimento) para a data do snapshot
+  const driversData = useMemo(() => {
+    const vol = toNumber(snapshot?.volume_total);
+    const sent = toNumber(snapshot?.sentiment_score);
+
+    return {
+      labels: ['Volume', 'Sentimento'],
+      datasets: [
+        {
+          label: 'Drivers do dia',
+          data: [
+            vol !== null ? vol : 0,
+            // para sentimento, escala para visual ficar legível (opcional):
+            // se quiser puro, deixe só `sent !== null ? sent : 0`
+            sent !== null ? Math.round(sent * 100) : 0,
+          ],
+          backgroundColor: ['#16A34A', '#F97316'],
+        },
+      ],
+    };
+  }, [snapshot]);
+
+  const driversOptions = useMemo(() => {
+    return {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { display: false },
+        tooltip: { enabled: true },
+      },
+      scales: { y: { beginAtZero: true } },
     };
   }, []);
 
   return (
-    <div style={{ display: 'grid', gap: 16, padding: 16, maxWidth: 1100, margin: '0 auto' }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-        <h1 style={{ margin: 0 }}>{clubName || 'Clube'}</h1>
-        <Link href="/" style={{ textDecoration: 'underline' }}>
-          Voltar ao ranking
-        </Link>
-      </div>
+    <main style={{ maxWidth: 980, margin: '0 auto', padding: 16, display: 'grid', gap: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+        <div style={{ display: 'grid', gap: 4 }}>
+          <h1 style={{ margin: 0, fontSize: 22 }}>Clube — {clubName}</h1>
+          <div style={{ fontSize: 12, opacity: 0.8 }}>
+            <Link href="/" style={{ textDecoration: 'underline' }}>Voltar ao ranking</Link>
+          </div>
+        </div>
 
-      {loading ? <div>Carregando série…</div> : null}
-
-      {error ? (
-        <div>
-          Erro ao buscar série: {error.message}
-          <button onClick={() => fetchSeries(clubName)} style={{ marginLeft: 12 }}>
-            Tentar novamente
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+          <label style={{ fontSize: 13 }}>Data (painel do dia):</label>
+          <input
+            type="date"
+            value={selectedDate}
+            onChange={(e) => setSelectedDate(e.target.value)}
+          />
+          <button onClick={() => setSelectedDate('')} title="Usar o último dia disponível">
+            Último dia
           </button>
         </div>
-      ) : null}
+      </div>
 
-      {!loading && !error && rows.length === 0 ? <div>Nenhum dado de série disponível para este clube.</div> : null}
+      {/* Painel do dia (snapshot) */}
+      <section style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Painel do dia (por que mudou)</div>
 
-      {/* KPIs */}
-      {!loading && !error && kpi ? (
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 12 }}>
-          <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12 }}>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>IAP (último)</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{fmt2(kpi.iap)}</div>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Data: {kpi.lastDate}</div>
+        {snapLoading ? (
+          <div>Carregando painel…</div>
+        ) : snapError ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div>Erro ao buscar painel: {snapError.message}</div>
+            <button onClick={() => fetchSnapshot(selectedDate)}>Tentar novamente</button>
           </div>
+        ) : snapshot ? (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 10 }}>
+              <div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Data</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>{snapshot.aggregation_date || '—'}</div>
+              </div>
 
-          <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12 }}>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>Variação vs anterior</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>
-              {kpi.delta === null ? '—' : (kpi.delta >= 0 ? '+' : '') + fmt2(kpi.delta)}
+              <div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>IAP (score)</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {snapshot.score !== null && snapshot.score !== undefined ? Number(snapshot.score).toFixed(2) : '—'}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Volume total</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {snapshot.volume_total !== null && snapshot.volume_total !== undefined ? snapshot.volume_total : '—'}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Sentimento</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {snapshot.sentiment_score !== null && snapshot.sentiment_score !== undefined
+                    ? Number(snapshot.sentiment_score).toFixed(2)
+                    : '—'}
+                </div>
+              </div>
+
+              <div>
+                <div style={{ fontSize: 12, opacity: 0.8 }}>Posição</div>
+                <div style={{ fontSize: 16, fontWeight: 700 }}>
+                  {snapshot.rank_position !== null && snapshot.rank_position !== undefined ? snapshot.rank_position : '—'}
+                </div>
+              </div>
             </div>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>
-              {kpi.prevDate ? `Base: ${kpi.prevDate} (${kpi.deltaPct})` : 'Sem dia anterior'}
+
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 10 }}>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>
+                Nota: no gráfico “Drivers”, o sentimento está multiplicado por 100 (apenas para visual).
+              </div>
+
+              <div style={{ height: 220 }}>
+                <Bar data={driversData} options={driversOptions} />
+              </div>
             </div>
+          </>
+        ) : (
+          <div>Nenhum snapshot encontrado.</div>
+        )}
+      </section>
+
+      {/* Série temporal */}
+      <section style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
+        <div style={{ fontSize: 14, fontWeight: 700 }}>Série temporal (últimos 180 dias)</div>
+
+        {seriesLoading ? (
+          <div>Carregando série…</div>
+        ) : seriesError ? (
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div>Erro ao buscar série: {seriesError.message}</div>
+            <button onClick={fetchSeries}>Tentar novamente</button>
           </div>
-
-          <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12 }}>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>Rank (último)</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{kpi.rank === null ? '—' : fmtInt(kpi.rank)}</div>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Data: {kpi.lastDate}</div>
+        ) : series.length === 0 ? (
+          <div>Nenhum dado de série disponível.</div>
+        ) : (
+          <div style={{ height: 420 }}>
+            <Line data={lineData} options={lineOptions} />
           </div>
-
-          <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12 }}>
-            <div style={{ fontSize: 12, opacity: 0.8 }}>Volume (último)</div>
-            <div style={{ fontSize: 28, fontWeight: 700 }}>{kpi.volume === null ? '—' : fmtInt(kpi.volume)}</div>
-            <div style={{ fontSize: 12, opacity: 0.75 }}>Data: {kpi.lastDate}</div>
-          </div>
-        </div>
-      ) : null}
-
-      {/* COMPARAR */}
-      {!loading && !error ? (
-        <div style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>Comparar com outro clube</div>
-
-          <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
-            <label style={{ fontSize: 14 }}>Clube:</label>
-
-            <select
-              value={compareClub}
-              onChange={(e) => {
-                const v = e.target.value;
-                setCompareClub(v);
-                setCompareSeries([]);
-                setCompareError(null);
-                if (v) fetchCompare(v);
-              }}
-              disabled={clubsLoading}
-              style={{ padding: 6, minWidth: 220 }}
-            >
-              <option value="">{clubsLoading ? 'Carregando…' : 'Selecione…'}</option>
-              {clubs
-                .map((c) => c.label)
-                .filter((label) => label && label !== clubName) // não comparar consigo mesmo
-                .map((label) => (
-                  <option key={label} value={label}>
-                    {label}
-                  </option>
-                ))}
-            </select>
-
-            <button
-              onClick={() => {
-                setCompareClub('');
-                setCompareSeries([]);
-                setCompareError(null);
-              }}
-              disabled={!compareClub}
-              title="Limpar comparação"
-            >
-              Limpar
-            </button>
-
-            {compareLoading ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando comparação…</span> : null}
-          </div>
-
-          {compareError ? (
-            <div style={{ fontSize: 13 }}>
-              Erro na comparação: {compareError.message}{' '}
-              <button onClick={() => compareClub && fetchCompare(compareClub)} style={{ marginLeft: 8 }}>
-                Tentar novamente
-              </button>
-            </div>
-          ) : null}
-
-          <div style={{ fontSize: 12, opacity: 0.75 }}>
-            O gráfico abaixo mostra {clubName}
-            {compareClub ? ` vs ${compareClub}` : ''} ao longo do tempo.
-          </div>
-        </div>
-      ) : null}
-
-      {/* Gráfico (agora suporta 1 ou 2 linhas) */}
-      {!loading && !error && rows.length > 0 ? (
-        <div style={{ height: 460, width: '100%' }}>
-          <Line data={chartData} options={chartOptions} />
-        </div>
-      ) : null}
-    </div>
+        )}
+      </section>
+    </main>
   );
 }
