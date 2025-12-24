@@ -152,44 +152,43 @@ export async function GET(req) {
 
 async function fetchSeriesAndReturn({ clubId, clubName, matchedBy, base, headers, limitDays, clubOfficial, clubShort }) {
   const p = new URLSearchParams();
-  p.set('select', 'aggregation_date,score,volume_total,sentiment_score,rank_position,club_id');
-  p.set('club_id', `eq.${clubId}`);
-  p.set('order', 'aggregation_date.asc');
-  p.set('limit', String(limitDays));
-
-  const res = await fetch(`${base}/daily_ranking?${p.toString()}`, { headers });
-  const text = await res.text();
-
-  if (!res.ok) {
-    return new Response(
-      JSON.stringify({
-        error: 'Falha ao buscar série em daily_ranking',
-        club: clubName,
-        club_id: clubId,
-        details: text,
-      }),
-      { status: 500, headers: { 'Content-Type': 'application/json' } }
-    );
-  }
-
-  let rows = [];
-  try {
-    rows = JSON.parse(text);
-  } catch {
-    rows = [];
-  }
-
-  const series = (Array.isArray(rows) ? rows : []).map((r) => ({
-    date: r.aggregation_date, // coluna correta
-    value: r.score,           // coluna correta
-    volume_total: r.volume_total,
-    sentiment_score: r.sentiment_score,
-    rank_position: r.rank_position,
-    club_id: r.club_id ?? clubId,
-    club_name: clubName,
-    club_name_official: clubOfficial || null,
-    club_name_short: clubShort || null,
-  }));
+    p.set('select', 'aggregation_date,iap_score,volume_total,rank_position,club_id');
+    p.set('club_id', `eq.${clubId}`);
+    p.set('order', 'aggregation_date.asc');
+    p.set('limit', String(limitDays));
+  
+    const res = await fetch(`${base}/daily_iap_ranking?${p.toString()}`, { headers });
+    const text = await res.text();
+  
+    if (!res.ok) {
+      return new Response(
+        JSON.stringify({
+          error: 'Falha ao buscar série em daily_iap_ranking',
+          club: clubName,
+          club_id: clubId,
+          details: text,
+        }),
+        { status: 500, headers: { 'Content-Type': 'application/json' } }
+      );
+    }
+  
+    let rows = [];
+    try {
+      rows = JSON.parse(text);
+    } catch {
+      rows = [];
+    }
+  
+    const series = (Array.isArray(rows) ? rows : []).map((r) => ({
+      date: r.aggregation_date,
+      value: r.iap_score,
+      volume_total: r.volume_total,
+      rank_position: r.rank_position,
+      club_id: r.club_id ?? clubId,
+      club_name: clubName,
+      club_name_official: clubOfficial || null,
+      club_name_short: clubShort || null,
+    }));
 
   return new Response(JSON.stringify(series), {
     status: 200,
