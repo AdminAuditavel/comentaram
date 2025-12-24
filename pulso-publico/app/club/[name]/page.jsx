@@ -1,9 +1,9 @@
 // app/club/[name]/page.jsx
-
 'use client';
 
 import Link from 'next/link';
 import { useEffect, useMemo, useState } from 'react';
+import { useParams } from 'next/navigation';
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -22,19 +22,30 @@ function toNumber(x) {
   return Number.isFinite(n) ? n : null;
 }
 
-export default function ClubPage({ params }) {
-  const clubName = decodeURIComponent(params?.name ?? '');
+export default function ClubPage() {
+  const params = useParams();
+  const rawName = params?.name; // string | string[] | undefined (na prática, string)
+  const clubName = useMemo(() => {
+    if (!rawName) return '';
+    const v = Array.isArray(rawName) ? rawName[0] : rawName;
+    // Next já decodifica muitas vezes, mas garantimos robustez:
+    try {
+      return decodeURIComponent(v);
+    } catch {
+      return v;
+    }
+  }, [rawName]);
 
   const [series, setSeries] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
 
-  const fetchSeries = async () => {
+  const fetchSeries = async (name) => {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch(`/api/club_series?club=${encodeURIComponent(clubName)}&limit_days=90`);
-      if (!res.ok) throw new Error('Erro ao buscar série do clube');
+      const res = await fetch(`/api/club_series?club=${encodeURIComponent(name)}&limit_days=90`);
+      if (!res.ok) throw new Error(`Erro ao buscar série do clube (${res.status})`);
       const json = await res.json();
       setSeries(Array.isArray(json) ? json : []);
     } catch (err) {
@@ -45,8 +56,7 @@ export default function ClubPage({ params }) {
   };
 
   useEffect(() => {
-    if (clubName) fetchSeries();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (clubName) fetchSeries(clubName);
   }, [clubName]);
 
   const rows = useMemo(() => {
@@ -61,12 +71,7 @@ export default function ClubPage({ params }) {
   const chartData = useMemo(() => {
     return {
       labels: rows.map((r) => String(r.date).slice(0, 10)), // YYYY-MM-DD
-      datasets: [
-        {
-          label: 'IAP',
-          data: rows.map((r) => r.value),
-        },
-      ],
+      datasets: [{ label: 'IAP', data: rows.map((r) => r.value) }],
     };
   }, [rows]);
 
@@ -88,12 +93,17 @@ export default function ClubPage({ params }) {
         </Link>
       </div>
 
+      {/* Debug mínimo (pode remover depois) */}
+      <div style={{ fontSize: 12, opacity: 0.75 }}>
+        Param: <code>{String(rawName ?? '')}</code>
+      </div>
+
       {loading ? <div>Carregando série…</div> : null}
 
       {error ? (
         <div>
           Erro ao buscar série: {error.message}
-          <button onClick={fetchSeries} style={{ marginLeft: 12 }}>
+          <button onClick={() => fetchSeries(clubName)} style={{ marginLeft: 12 }}>
             Tentar novamente
           </button>
         </div>
