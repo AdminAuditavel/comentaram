@@ -20,8 +20,8 @@ export async function GET(req) {
 
     const base = supabaseUrl.replace(/\/$/, '') + '/rest/v1';
 
-    // tenta nome de recurso singular primeiro, se falhar tenta plural
-    const candidates = ['daily_ranking', 'daily_rankings'];
+    // Tenta a view que já tem club_name primeiro, depois outras fontes
+    const candidates = ['daily_ranking_with_names', 'daily_ranking', 'daily_rankings'];
     let rankings = null;
     let lastErrorText = '';
 
@@ -51,62 +51,23 @@ export async function GET(req) {
     if (!rankings) {
       return new Response(
         JSON.stringify({
-          error: 'Erro ao buscar daily_ranking (tenteu singular/plural)',
+          error: 'Erro ao buscar daily_ranking (nenhuma fonte retornou ok)',
           details: lastErrorText,
         }),
         { status: 500, headers: { 'Content-Type': 'application/json' } }
       );
     }
 
-    // Se não há club_id, retorna direto
-    const clubIds = Array.from(new Set(rankings.map((r) => r.club_id).filter(Boolean)));
-    if (clubIds.length === 0) {
-      return new Response(JSON.stringify(rankings), {
-        status: 200,
-        headers: { 'Content-Type': 'application/json' },
-      });
-    }
-
-    // Busca nomes dos clubes pela lista de ids — IMPORTANT: strings (UUIDs) devem estar entre aspas no filtro in.
-    const clubsUrl = new URL(`${base}/clubs`);
-    const clubParams = new URLSearchParams();
-    clubParams.set('select', 'id,name');
-
-    // coloca cada id entre aspas para o operador in do PostgREST, as aspas serão url-encoded automaticamente
-    const quoted = clubIds.map((id) => `"${id}"`).join(',');
-    clubParams.set('id', `in.(${quoted})`);
-    clubsUrl.search = clubParams.toString();
-
-    const clubsRes = await fetch(clubsUrl.toString(), {
-      headers: {
-        apikey: supabaseKey,
-        Authorization: `Bearer ${supabaseKey}`,
-        Accept: 'application/json',
-      },
-    });
-
-    const clubsText = await clubsRes.text();
-    let clubs = [];
-    if (clubsRes.ok) {
-      try {
-        clubs = JSON.parse(clubsText);
-      } catch (e) {
-        clubs = [];
+    // Se a view trouxe club_name, cria propriedade club: { name } para compatibilidade com frontend
+    const mapped = rankings.map((item) => {
+      if (item.club && item.club.name) return item; // já tem club
+      if (item.club_name) {
+        return { ...item, club: { name: item.club_name } };
       }
-    }
-
-    const clubsMap = clubs.reduce((acc, c) => {
-      if (c && c.id) acc[c.id] = c.name ?? null;
-      return acc;
-    }, {});
-
-    // Anexa objeto club: { name } a cada item (se encontrado)
-    const merged = rankings.map((item) => {
-      const clubName = item.club_id ? clubsMap[item.club_id] ?? null : null;
-      return { ...item, club: clubName ? { name: clubName } : item.club ?? null };
+      return item;
     });
 
-    return new Response(JSON.stringify(merged), {
+    return new Response(JSON.stringify(mapped), {
       status: 200,
       headers: { 'Content-Type': 'application/json' },
     });
