@@ -5,18 +5,21 @@
 import { useEffect, useState } from 'react';
 
 function getClubName(item) {
-  // tenta várias chaves/estruturas comuns que o backend pode retornar
   if (!item) return '—';
+  // prioridade: club.name -> club_name -> club_name_shortcuts if any -> club_id truncated
+  if (item.club && typeof item.club === 'object' && (item.club.name || item.club.club_name)) {
+    return item.club.name ?? item.club.club_name;
+  }
   if (item.club_name) return item.club_name;
   if (item.name) return item.name;
   if (item.club) {
     if (typeof item.club === 'string') return item.club;
-    if (typeof item.club === 'object') return item.club.name ?? item.club.club_name ?? JSON.stringify(item.club);
+    try {
+      return JSON.stringify(item.club);
+    } catch (e) {
+      // ignore
+    }
   }
-  // tenta propriedades aninhadas comuns
-  if (item.club?.name) return item.club.name;
-  if (item.club?.club_name) return item.club.club_name;
-  // fallback: mostra prefixo do id para identificar
   if (item.club_id) return item.club_id.slice(0, 8) + '…';
   return '—';
 }
@@ -71,7 +74,7 @@ export default function Ranking() {
             <tr key={item.club_id ?? idx}>
               <td>{idx + 1}</td>
               <td>{getClubName(item)}</td>
-              <td>{item.iap ?? item.score ?? '—'}</td>
+              <td>{item.score ?? item.iap ?? '—'}</td>
             </tr>
           ))}
         </tbody>
