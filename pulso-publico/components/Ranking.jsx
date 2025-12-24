@@ -246,8 +246,10 @@ export default function Ranking() {
 
   /* ============================
      Tendência (vs dia anterior)
+     + Map completo do dia anterior (rank/score/volume/sent)
   ============================ */
   const [prevRankMap, setPrevRankMap] = useState(new Map()); // Map<clubName, rank_position>
+  const [prevMetricsMap, setPrevMetricsMap] = useState(new Map()); // Map<clubName, {rank, score, volume, sent}>
   const [prevDateUsed, setPrevDateUsed] = useState(''); // YYYY-MM-DD
   const [prevLoading, setPrevLoading] = useState(false);
   const [prevError, setPrevError] = useState(null);
@@ -259,6 +261,7 @@ export default function Ranking() {
       if (!effectiveDate) {
         setPrevDateUsed('');
         setPrevRankMap(new Map());
+        setPrevMetricsMap(new Map());
         return;
       }
 
@@ -266,6 +269,7 @@ export default function Ranking() {
       if (!p) {
         setPrevDateUsed('');
         setPrevRankMap(new Map());
+        setPrevMetricsMap(new Map());
         return;
       }
 
@@ -276,12 +280,15 @@ export default function Ranking() {
         const res = await fetch(`/api/daily_ranking?date=${encodeURIComponent(p)}`);
         if (!res.ok) {
           setPrevRankMap(new Map());
+          setPrevMetricsMap(new Map());
           return;
         }
         const json = await res.json();
         const arr = Array.isArray(json) ? json : [];
 
-        const m = new Map();
+        const rm = new Map();
+        const mm = new Map();
+
         for (let i = 0; i < arr.length; i += 1) {
           const it = arr[i];
           const name = getClubName(it);
@@ -289,13 +296,21 @@ export default function Ranking() {
 
           const rp = toNumber(it?.rank_position);
           const rankPos = rp !== null ? rp : i + 1;
-          m.set(name, rankPos);
+
+          const score = toNumber(it?.score ?? it?.iap ?? it?.iap_score);
+          const volume = toNumber(it?.volume_total);
+          const sent = toNumber(it?.sentiment_score);
+
+          rm.set(name, rankPos);
+          mm.set(name, { rank: rankPos, score, volume, sent });
         }
 
-        setPrevRankMap(m);
+        setPrevRankMap(rm);
+        setPrevMetricsMap(mm);
       } catch (e) {
         setPrevError(e);
         setPrevRankMap(new Map());
+        setPrevMetricsMap(new Map());
       } finally {
         setPrevLoading(false);
       }
@@ -347,6 +362,79 @@ export default function Ranking() {
 
     return { up, down };
   }, [tableItems, prevDateUsed, prevRankMap]);
+
+  /* ============================
+     Insights do dia
+  ============================ */
+  const insights = useMemo(() => {
+    if (!Array.isArray(tableItems) || tableItems.length === 0) return null;
+
+    // Leader (#1)
+    const first = tableItems[0];
+    const leaderName = getClubName(first);
+    const leaderScore = toNumber(first?.score ?? first?.iap ?? first?.iap_score);
+
+    // Max volume
+    let maxVol = null;
+    let maxVolName = null;
+
+    // Best / worst sentiment
+    let bestSent = null;
+    let bestSentName = null;
+    let worstSent = null;
+    let worstSentName = null;
+
+    // Biggest score delta vs prev day (needs prevMetricsMap)
+    let bestUp = null; // {name, delta, prev, curr}
+    let bestDown = null;
+
+    for (let i = 0; i < tableItems.length; i += 1) {
+      const it = tableItems[i];
+      const name = getClubName(it);
+      if (!name || name === '—') continue;
+
+      const currScore = toNumber(it?.score ?? it?.iap ?? it?.iap_score);
+      const currVol = toNumber(it?.volume_total);
+      const currSent = toNumber(it?.sentiment_score);
+
+      if (currVol !== null) {
+        if (maxVol === null || currVol > maxVol) {
+          maxVol = currVol;
+          maxVolName = name;
+        }
+      }
+
+      if (currSent !== null) {
+        if (bestSent === null || currSent > bestSent) {
+          bestSent = currSent;
+          bestSentName = name;
+        }
+        if (worstSent === null || currSent < worstSent) {
+          worstSent = currSent;
+          worstSentName = name;
+        }
+      }
+
+      // Δ score vs prev day
+      const prev = prevMetricsMap.get(name);
+      const prevScore = prev ? prev.score : null;
+      if (currScore !== null && prevScore !== null && prevScore !== undefined) {
+        const delta = currScore - prevScore;
+        if (!bestUp || delta > bestUp.delta) bestUp = { name, delta, prev: prevScore, curr: currScore };
+        if (!bestDown || delta < bestDown.delta) bestDown = { name, delta, prev: prevScore, curr: currScore };
+      }
+    }
+
+    return {
+      leader: { name: leaderName, score: leaderScore },
+      maxVol: maxVolName ? { name: maxVolName, value: maxVol } : null,
+      bestSent: bestSentName ? { name: bestSentName, value: bestSent } : null,
+      worstSent: worstSentName ? { name: worstSentName, value: worstSent } : null,
+      bestUp,
+      bestDown,
+      hasPrev: Boolean(prevDateUsed && prevMetricsMap && prevMetricsMap.size > 0),
+    };
+  }, [tableItems, prevMetricsMap, prevDateUsed]);
 
   /* ============================
      Comparação multi-clubes (linha)
@@ -525,6 +613,8 @@ export default function Ranking() {
 
   if (!data || !Array.isArray(data) || data.length === 0) return <div>Nenhum dado disponível</div>;
 
+  const linkClub = (name) => `/club/${encodeURIComponent(name)}`;
+
   return (
     <div style={{ display: 'grid', gap: 18 }}>
       <h2 style={{ margin: 0 }}>Ranking Diário</h2>
@@ -538,7 +628,7 @@ export default function Ranking() {
           </>
         ) : null}
         {prevLoading ? (
-          <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>Calculando tendência…</span>
+          <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>Calculando comparações…</span>
         ) : prevDateUsed ? (
           <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>vs {prevDateUsed}</span>
         ) : null}
@@ -546,7 +636,7 @@ export default function Ranking() {
 
       {prevError ? (
         <div style={{ fontSize: 12, opacity: 0.9 }}>
-          Aviso: não foi possível carregar o dia anterior para tendência ({prevError.message})
+          Aviso: não foi possível carregar o dia anterior ({prevError.message})
         </div>
       ) : null}
 
@@ -588,12 +678,126 @@ export default function Ranking() {
         </button>
       </div>
 
+      {/* INSIGHTS DO DIA */}
+      <section style={{ border: '1px solid #eee', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>Insights do dia</div>
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            Base: {effectiveDate || '—'} {insights?.hasPrev ? `vs ${prevDateUsed}` : '(sem dia anterior)'}
+          </div>
+        </div>
+
+        {!insights ? (
+          <div style={{ fontSize: 12, opacity: 0.8 }}>Sem dados.</div>
+        ) : (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
+            <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Líder do dia</div>
+              <div style={{ fontSize: 14 }}>
+                <Link href={linkClub(insights.leader.name)} style={{ textDecoration: 'underline', fontWeight: 700 }}>
+                  {insights.leader.name}
+                </Link>{' '}
+                {insights.leader.score !== null ? (
+                  <span style={{ opacity: 0.85 }}>({insights.leader.score.toFixed(2)})</span>
+                ) : null}
+              </div>
+            </div>
+
+            <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Maior alta de IAP (Δ)</div>
+              {insights.hasPrev && insights.bestUp ? (
+                <div style={{ fontSize: 14 }}>
+                  <Link href={linkClub(insights.bestUp.name)} style={{ textDecoration: 'underline', fontWeight: 700 }}>
+                    {insights.bestUp.name}
+                  </Link>{' '}
+                  <span style={{ color: '#16A34A', fontWeight: 700 }}>
+                    +{insights.bestUp.delta.toFixed(2)}
+                  </span>{' '}
+                  <span style={{ opacity: 0.75 }}>
+                    ({insights.bestUp.prev.toFixed(2)} → {insights.bestUp.curr.toFixed(2)})
+                  </span>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.8 }}>—</div>
+              )}
+            </div>
+
+            <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Maior queda de IAP (Δ)</div>
+              {insights.hasPrev && insights.bestDown ? (
+                <div style={{ fontSize: 14 }}>
+                  <Link href={linkClub(insights.bestDown.name)} style={{ textDecoration: 'underline', fontWeight: 700 }}>
+                    {insights.bestDown.name}
+                  </Link>{' '}
+                  <span style={{ color: '#DC2626', fontWeight: 700 }}>
+                    {insights.bestDown.delta.toFixed(2)}
+                  </span>{' '}
+                  <span style={{ opacity: 0.75 }}>
+                    ({insights.bestDown.prev.toFixed(2)} → {insights.bestDown.curr.toFixed(2)})
+                  </span>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.8 }}>—</div>
+              )}
+            </div>
+
+            <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Maior volume do dia</div>
+              {insights.maxVol ? (
+                <div style={{ fontSize: 14 }}>
+                  <Link href={linkClub(insights.maxVol.name)} style={{ textDecoration: 'underline', fontWeight: 700 }}>
+                    {insights.maxVol.name}
+                  </Link>{' '}
+                  <span style={{ opacity: 0.85 }}>({insights.maxVol.value})</span>
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.8 }}>—</div>
+              )}
+            </div>
+
+            <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
+              <div style={{ fontSize: 12, opacity: 0.75 }}>Sentimento do dia (melhor / pior)</div>
+              <div style={{ fontSize: 13, display: 'grid', gap: 4 }}>
+                {insights.bestSent ? (
+                  <div>
+                    <Link href={linkClub(insights.bestSent.name)} style={{ textDecoration: 'underline', fontWeight: 700 }}>
+                      {insights.bestSent.name}
+                    </Link>{' '}
+                    <span style={{ color: '#16A34A', fontWeight: 700 }}>{insights.bestSent.value.toFixed(2)}</span>
+                  </div>
+                ) : (
+                  <div style={{ opacity: 0.8 }}>—</div>
+                )}
+
+                {insights.worstSent ? (
+                  <div>
+                    <Link
+                      href={linkClub(insights.worstSent.name)}
+                      style={{ textDecoration: 'underline', fontWeight: 700 }}
+                    >
+                      {insights.worstSent.name}
+                    </Link>{' '}
+                    <span style={{ color: '#DC2626', fontWeight: 700 }}>{insights.worstSent.value.toFixed(2)}</span>
+                  </div>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!insights?.hasPrev ? (
+          <div style={{ fontSize: 12, opacity: 0.75 }}>
+            Observação: para “Maior alta/queda de IAP (Δ)”, é necessário existir ranking do dia anterior.
+          </div>
+        ) : null}
+      </section>
+
       {/* TOP MOVERS */}
       <section style={{ border: '1px solid #eee', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
-          <div style={{ fontSize: 14, fontWeight: 700 }}>Top Movers (vs {prevDateUsed || 'dia anterior'})</div>
+          <div style={{ fontSize: 14, fontWeight: 700 }}>Top Movers (posição)</div>
           <div style={{ fontSize: 12, opacity: 0.75 }}>
-            Base: ranking exibido ({effectiveDate || '—'}) comparado ao dia anterior disponível
+            Base: ranking exibido ({effectiveDate || '—'}) vs {prevDateUsed || 'dia anterior'}
           </div>
         </div>
 
@@ -609,7 +813,7 @@ export default function Ranking() {
                 <ol style={{ margin: '8px 0 0 18px', padding: 0 }}>
                   {movers.up.map((m) => (
                     <li key={m.name} style={{ marginBottom: 6, fontSize: 13 }}>
-                      <Link href={`/club/${encodeURIComponent(m.name)}`} style={{ textDecoration: 'underline' }}>
+                      <Link href={linkClub(m.name)} style={{ textDecoration: 'underline' }}>
                         {m.name}
                       </Link>{' '}
                       <span style={{ fontWeight: 700, color: '#16A34A' }}>↑ +{m.delta}</span>{' '}
@@ -630,7 +834,7 @@ export default function Ranking() {
                 <ol style={{ margin: '8px 0 0 18px', padding: 0 }}>
                   {movers.down.map((m) => (
                     <li key={m.name} style={{ marginBottom: 6, fontSize: 13 }}>
-                      <Link href={`/club/${encodeURIComponent(m.name)}`} style={{ textDecoration: 'underline' }}>
+                      <Link href={linkClub(m.name)} style={{ textDecoration: 'underline' }}>
                         {m.name}
                       </Link>{' '}
                       <span style={{ fontWeight: 700, color: '#DC2626' }}>↓ {m.delta}</span>{' '}
