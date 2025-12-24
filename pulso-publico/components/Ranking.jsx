@@ -399,7 +399,29 @@ export default function Ranking() {
           <div style={{ fontSize: 12, opacity: 0.8 }}>
             Selecionados: <strong>{compareSelected.length}</strong>/5
           </div>
-
+        
+          <button
+            onClick={() => {
+              // pega a fonte que está sendo exibida na tabela atual
+              const source = Array.isArray(tableItems) ? tableItems : [];
+        
+              // extrai nomes, respeitando a ordem já exibida (posição 1..n)
+              const top = source
+                .map((it) => getClubName(it))
+                .filter((n) => n && n !== '—')
+                .slice(0, 5);
+        
+              // aplica seleção
+              setCompareError(null);
+              setCompareSelected(top);
+              // não precisa mexer no compareMap: o effect carrega o que estiver faltando
+            }}
+            disabled={!Array.isArray(tableItems) || tableItems.length === 0}
+            title="Seleciona automaticamente os 5 primeiros do ranking exibido"
+          >
+            Top 5 do dia
+          </button>
+        
           <button
             onClick={() => {
               setCompareSelected([]);
@@ -410,7 +432,7 @@ export default function Ranking() {
           >
             Limpar seleção
           </button>
-
+        
           {compareBusy ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando séries…</span> : null}
         </div>
 
