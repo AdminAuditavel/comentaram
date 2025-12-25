@@ -1,3 +1,4 @@
+//pulso-publico/components/IapBarChart.tsx
 'use client';
 
 import React from 'react';
