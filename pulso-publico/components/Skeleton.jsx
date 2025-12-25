@@ -1,4 +1,4 @@
-
+//pulso-publico/components/Skeleton.jsx
 import React from 'react';
 
 /**
