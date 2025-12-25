@@ -271,6 +271,20 @@ export default function ClubPage() {
       <section style={{ border: '1px solid #ddd', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
         <div style={{ fontSize: 14, fontWeight: 700 }}>Painel do dia</div>
 
+        {snapshot?.resolved_date && selectedDate && snapshot.resolved_date !== selectedDate ? (
+          <div
+            style={{
+              fontSize: 12,
+              opacity: 0.75,
+              marginTop: -6,
+              marginBottom: 6,
+            }}
+          >
+            Data resolvida automaticamente:{' '}
+            <strong>{snapshot.resolved_date}</strong> (você selecionou {selectedDate})
+          </div>
+        ) : null}
+
         {snapLoading ? (
           <div>Carregando painel…</div>
         ) : snapError ? (
