@@ -1,4 +1,5 @@
 // pulso-publico/components/Ranking.jsx
+
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
@@ -21,6 +22,7 @@ import TrendBadge from './TrendBadge';
 import MiniSparkline from './MiniSparkline';
 import Skeleton from './Skeleton';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
+import btnStyles from './Button.module.css';
 
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
@@ -64,11 +66,6 @@ function normalizeSeries(series) {
   return arr;
 }
 
-function getAggregationDateFromItem(item) {
-  const d = item?.aggregation_date ?? item?.metric_date ?? item?.date;
-  return d ? String(d).slice(0, 10) : '';
-}
-
 function prevDay(yyyyMMdd) {
   if (!yyyyMMdd) return '';
   const p = yyyyMMdd.split('-');
@@ -106,9 +103,7 @@ export default function Ranking() {
     shouldRetryOnError: true,
   });
 
-  // descompacta envelope se houver
   const rankingArr = Array.isArray(rankingJson) ? rankingJson : Array.isArray(rankingJson?.data) ? rankingJson.data : [];
-  // resolved_date caso backend retorne envelope
   const resolvedDate = rankingJson && !Array.isArray(rankingJson) && rankingJson?.resolved_date ? String(rankingJson.resolved_date).slice(0, 10) : '';
   const requestedDate = selectedDate ? selectedDate : '';
 
@@ -118,7 +113,7 @@ export default function Ranking() {
   });
   const clubs = Array.isArray(clubsJson) ? clubsJson : [];
 
-  // prev-day fetch (mantemos AbortController para esse caso específico)
+  // prev-day fetch (kept AbortController)
   const prevFetchCtrlRef = useRef(null);
   const [prevRankMap, setPrevRankMap] = useState(new Map());
   const [prevMetricsMap, setPrevMetricsMap] = useState(new Map());
@@ -126,7 +121,7 @@ export default function Ranking() {
   const [prevLoading, setPrevLoading] = useState(false);
   const [prevError, setPrevError] = useState(null);
 
-  const effectiveDate = resolvedDate || selectedDate || (rankingArr?.[0] ? getAggregationDateFromItem(rankingArr[0]) : '');
+  const effectiveDate = resolvedDate || selectedDate || (rankingArr?.[0] ? (rankingArr[0]?.aggregation_date ?? rankingArr[0]?.metric_date ?? rankingArr[0]?.date)?.slice(0,10) : '');
 
   useEffect(() => {
     let cancelled = false;
@@ -146,7 +141,6 @@ export default function Ranking() {
         return;
       }
 
-      // abort previous
       if (prevFetchCtrlRef.current) {
         try { prevFetchCtrlRef.current.abort(); } catch {}
       }
@@ -249,7 +243,7 @@ export default function Ranking() {
     };
   }, []);
 
-  // comparação multi-clubes: mantemos o mecanismo de AbortController (já estava)
+  // comparação multi-clubes
   const [compareSelected, setCompareSelected] = useState([]);
   const [compareMap, setCompareMap] = useState({});
   const [compareBusy, setCompareBusy] = useState(false);
@@ -266,7 +260,6 @@ export default function Ranking() {
 
     let cancelled = false;
 
-    // abort previous batch
     if (compareFetchCtrlRef.current) {
       try { compareFetchCtrlRef.current.abort(); } catch {}
     }
@@ -357,7 +350,7 @@ export default function Ranking() {
       .sort((a, b) => a.localeCompare(b));
   }, [clubs]);
 
-  // render helpers
+  // render helper
   function renderTrend(item, idx) {
     const currRank = toNumber(item?.rank_position) !== null ? toNumber(item?.rank_position) : idx + 1;
     const name = getClubName(item);
@@ -371,7 +364,6 @@ export default function Ranking() {
     return <TrendBadge direction="flat" value={0} />;
   }
 
-  // UI states
   const isLoading = rankingLoading;
   const isError = rankingError;
 
@@ -394,7 +386,7 @@ export default function Ranking() {
       {isError ? (
         <div>
           Erro ao buscar ranking: {String(rankingError?.message ?? rankingError)}
-          <button onClick={() => mutateRanking()} style={{ marginLeft: 12 }}>
+          <button className={btnStyles.btn} onClick={() => mutateRanking()} style={{ marginLeft: 12 }}>
             Tentar novamente
           </button>
         </div>
@@ -412,6 +404,7 @@ export default function Ranking() {
           }}
         />
         <button
+          className={btnStyles.btn}
           onClick={() => {
             setSelectedDate('');
           }}
@@ -431,7 +424,7 @@ export default function Ranking() {
           ))}
         </select>
 
-        <button onClick={() => setSelectedClub('')} disabled={!selectedClub} title="Limpar filtro de clube">
+        <button className={btnStyles.btn} onClick={() => setSelectedClub('')} disabled={!selectedClub} title="Limpar filtro de clube">
           Limpar clube
         </button>
       </div>
@@ -463,12 +456,10 @@ export default function Ranking() {
           </div>
         ) : (
           <>
-            {/* compute insights locally from rankingArr */}
             {(!rankingArr || rankingArr.length === 0) ? (
               <div style={{ fontSize: 12, opacity: 0.8 }}>Sem dados.</div>
             ) : (
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 10 }}>
-                {/* Leader */}
                 <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
                   <div style={{ fontSize: 12, opacity: 0.75 }}>Líder do dia</div>
                   <div style={{ fontSize: 14 }}>
@@ -481,7 +472,6 @@ export default function Ranking() {
                   </div>
                 </div>
 
-                {/* placeholders: reuse code from earlier but simplified */}
                 <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
                   <div style={{ fontSize: 12, opacity: 0.75 }}>Maior alta de IAP (Δ)</div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Consulte o dia anterior para calcular Δ.</div>
@@ -510,7 +500,6 @@ export default function Ranking() {
                 <div style={{ border: '1px solid #f2f2f2', borderRadius: 10, padding: 10 }}>
                   <div style={{ fontSize: 12, opacity: 0.75 }}>Sentimento do dia (melhor / pior)</div>
                   <div style={{ fontSize: 13 }}>
-                    {/* compute best/worst sentiment quickly */}
                     {(() => {
                       let best = null, bestName = null, worst = null, worstName = null;
                       for (let i = 0; i < rankingArr.length; i += 1) {
@@ -537,7 +526,7 @@ export default function Ranking() {
         )}
       </section>
 
-      {/* Top Movers (mantido) */}
+      {/* TOP MOVERS */}
       <section style={{ border: '1px solid #eee', borderRadius: 12, padding: 12, display: 'grid', gap: 10 }}>
         <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10, flexWrap: 'wrap' }}>
           <div style={{ fontSize: 14, fontWeight: 700 }}>Top Movers (posição)</div>
@@ -553,9 +542,7 @@ export default function Ranking() {
           </div>
         ) : (
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))', gap: 12 }}>
-            {/* compute movers quickly */}
             {(() => {
-              // compute simple movers: compare prevRankMap with current rankingArr
               if (!prevDateUsed || prevRankMap.size === 0) {
                 return <div style={{ fontSize: 12, opacity: 0.8 }}>Sem comparação disponível (não há dados do dia anterior).</div>;
               }
@@ -691,6 +678,7 @@ export default function Ranking() {
             </div>
 
             <button
+              className={btnStyles.btn}
               onClick={async () => {
                 setTop5BError(null);
                 setTop5BLoading(true);
@@ -704,9 +692,6 @@ export default function Ranking() {
                   const topA = aItems.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
                   const topB = bItems.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
                   setAbSummary((() => {
-                    const a20 = aItems.slice(0, 20);
-                    const b20 = bItems.slice(0, 20);
-                    // simple build
                     const entered = topB.filter((n) => !topA.includes(n));
                     const exited = topA.filter((n) => !topB.includes(n));
                     return { entered, exited };
@@ -736,11 +721,13 @@ export default function Ranking() {
           {abSummary ? (
             <div style={{ border: '1px solid #eee', borderRadius: 10, padding: 10, display: 'grid', gap: 8 }}>
               <div style={{ fontSize: 13, fontWeight: 700 }}>Resumo A → B</div>
+
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10 }}>
                 <div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Entraram no Top 5 (B)</div>
                   <div style={{ fontSize: 13 }}>{abSummary.entered.length ? abSummary.entered.join(', ') : '—'}</div>
                 </div>
+
                 <div>
                   <div style={{ fontSize: 12, opacity: 0.8 }}>Saíram do Top 5 (A)</div>
                   <div style={{ fontSize: 13 }}>{abSummary.exited.length ? abSummary.exited.join(', ') : '—'}</div>
@@ -775,7 +762,7 @@ export default function Ranking() {
         <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
           <div style={{ fontSize: 12, opacity: 0.8 }}>Selecionados: <strong>{compareSelected.length}</strong>/{compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5}</div>
 
-          <button onClick={() => {
+          <button className={btnStyles.btn} onClick={() => {
             const source = Array.isArray(rankingArr) ? rankingArr : [];
             const top = source.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
             setCompareMap({});
@@ -784,7 +771,7 @@ export default function Ranking() {
             setCompareError(null);
           }} disabled={!Array.isArray(rankingArr) || rankingArr.length === 0}>Top 5 do dia</button>
 
-          <button onClick={() => { setCompareSelected([]); setCompareMap({}); setCompareError(null); setAbSummary(null); }} disabled={compareSelected.length === 0}>Limpar seleção</button>
+          <button className={btnStyles.btn} onClick={() => { setCompareSelected([]); setCompareMap({}); setCompareError(null); setAbSummary(null); }} disabled={compareSelected.length === 0}>Limpar seleção</button>
 
           {compareBusy ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando séries…</span> : null}
         </div>
