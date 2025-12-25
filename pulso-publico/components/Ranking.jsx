@@ -172,7 +172,7 @@ export default function Ranking() {
 
   const [selectedDate, setSelectedDate] = useState(''); // YYYY-MM-DD
   const [selectedClub, setSelectedClub] = useState(''); // nome
-
+   
   const fetchData = async (date) => {
     setLoading(true);
     setError(null);
@@ -181,7 +181,16 @@ export default function Ranking() {
       const res = await fetch(`/api/daily_ranking${qs}`);
       if (!res.ok) throw new Error('Erro ao buscar dados');
       const json = await res.json();
-      setData(json);
+  
+      // compat: aceita array antigo ou envelope novo
+      const arr = Array.isArray(json) ? json : (Array.isArray(json?.data) ? json.data : []);
+      setData(arr);
+  
+      // opcional: se quiser mostrar a data resolvida (fallback)
+      if (!Array.isArray(json) && json?.resolved_date) {
+        // você pode salvar em um state e exibir no header
+        // ex: setResolvedDate(json.resolved_date)
+      }
     } catch (err) {
       setError(err);
     } finally {
