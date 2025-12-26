@@ -71,19 +71,13 @@ function clubKeyFromItem(item) {
 
 /* ========= Extração numérica coerente ========= */
   function pickIapNumber(item) {
+    // Seu ranking diário usa "value" como IAP
     const raw =
+      item?.value ??
       item?._computed_value ??
       item?.iap_score ??
       item?.score ??
       item?.iap ??
-      item?.value ??
-      // extras comuns em APIs
-      item?.iap_total ??
-      item?.iapScore ??
-      item?.iapValue ??
-      item?.metrics?.iap ??
-      item?.metrics?.iap_score ??
-      item?.metrics?.score ??
       null;
   
     return toNumber(raw);
@@ -245,19 +239,34 @@ export default function Ranking() {
 
     return arr.map((r) => {
       const item = { ...r.rawItem };
-
+    
       // garante rank_position numérico
       item.rank_position = r.rank_position;
-
+    
+      const computed = r.value === undefined ? null : r.value;
+    
       // injeta compat + chave para join
-      const out = withCompatFields(item, r.value === undefined ? null : r.value);
+      const out = withCompatFields(item, computed);
       out.__club_key = r.key;
-
+    
       // reforça display “original”
       out.club = r.display;
       out.label = r.display;
       out.name = r.display;
-
+    
+      // ========= NORMALIZAÇÃO CRÍTICA =========
+      // seu ranking diário usa "value" como IAP
+      // e vários componentes leem score / iap / iap_score.
+      // então garantimos aqui, sem depender do withCompatFields.
+      if (computed !== null && computed !== undefined) {
+        out._computed_value = computed;
+        out.value = computed;
+        out.score = computed;
+        out.iap = computed;
+        out.iap_score = computed;
+      }
+      // =======================================
+    
       return out;
     });
   }, [data]);
