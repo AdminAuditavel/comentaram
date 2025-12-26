@@ -1,8 +1,8 @@
 :root{
-  --primary: #5b88a5;
+  --primary: #686466;
   --bg: #f4f4f2;
   --focus-shadow: rgba(91,136,165,0.16);
-  --title-color: #243a69;
+  --title-color: #96d7eb;
 }
 
 /* Header row layout */
