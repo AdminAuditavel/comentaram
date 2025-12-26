@@ -1,8 +1,21 @@
 :root{
-  --primary: #00ABE4;
-  --bg: #00ABE4;
-  --focus-shadow: rgba(91,136,165,0.16);
-  --title-color: #96d7eb;
+  /* Paleta verde (solicitada) */
+  --c-1: #337d26; /* primário forte */
+  --c-2: #549d45;
+  --c-3: #74be63;
+  --c-4: #95de82;
+  --c-5: #b6ffa0;
+
+  /* aliases para compatibilidade com outros módulos */
+  --primary: var(--c-1);
+  --bg: #ffffff; /* fundo branco */
+  --focus-shadow: rgba(51,125,38,0.16);
+  --title-color: #000000; /* título em preto (bom contraste sobre fundo branco) */
+
+  --muted: rgba(0,0,0,0.48);
+  --card: #f6fff4; /* cartão muito suave levemente esverdeado */
+  --radius: 10px;
+  --transition: 180ms ease;
 }
 
 /* Header row layout */
@@ -14,6 +27,7 @@
   width: 100%;
   box-sizing: border-box;
   padding: 8px 0;
+  background: transparent;
 }
 
 /* left group: logo + categoria */
@@ -34,12 +48,12 @@
 
 /* category badge (pequeno, próximo ao logo) */
 .categoryBadge{
-  background: rgba(91,136,165,0.08);
+  background: rgba(51,125,38,0.08);
   color: var(--primary);
   font-weight: 700;
   padding: 6px 10px;
   border-radius: 999px;
-  border: 1px solid rgba(91,136,165,0.12);
+  border: 1px solid rgba(51,125,38,0.12);
   font-size: 13px;
   display: inline-flex;
   align-items: center;
@@ -68,11 +82,57 @@
   background: #fff;
   transition: box-shadow 160ms ease, border-color 160ms ease, transform 120ms ease;
   outline: none;
+  color: var(--title-color);
 }
 
 .dateInput:focus{
   border-color: var(--primary);
-  box-shadow: 0 6px 18px var(--focus-shadow), 0 0 0 4px rgba(91,136,165,0.06);
+  box-shadow: 0 6px 18px var(--focus-shadow), 0 0 0 4px rgba(51,125,38,0.06);
+}
+
+/* card / hero / topic styles to match palette */
+.heroCard{
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 14px;
+  box-shadow: 0 8px 28px rgba(51,125,38,0.06);
+  border: 1px solid rgba(0,0,0,0.04);
+  color: var(--title-color);
+}
+
+.topicCard{
+  display: block;
+  padding: 12px;
+  border-radius: 12px;
+  background: var(--card);
+  text-decoration: none;
+  color: var(--title-color);
+  border: 1px solid rgba(0,0,0,0.04);
+  transition: transform var(--transition), box-shadow var(--transition);
+}
+
+.topicCard:hover{
+  transform: translateY(-4px);
+  box-shadow: 0 12px 28px rgba(51,125,38,0.06);
+}
+
+/* small helpers */
+.smallLabel{
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.bigLabel{
+  font-size: 18px;
+  font-weight: 800;
+  margin-top: 8px;
+  color: var(--c-1);
+}
+
+.centerAligned{
+  display:flex;
+  align-items:center;
+  justify-content:center;
 }
 
 /* responsividade */
