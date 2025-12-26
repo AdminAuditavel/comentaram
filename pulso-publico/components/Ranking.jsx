@@ -33,7 +33,7 @@ import {
   COLOR_B,
 } from '../lib/rankingUtils';
 
-// Chart.js registration
+// Chart.js registration (if not already globally registered elsewhere)
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -106,17 +106,13 @@ export default function Ranking() {
       const club = getClubName(item);
       if (!club || club === '—') continue;
 
-      // try several fields commonly used
       const raw = item?.score ?? item?.iap ?? item?.iap_score ?? item?.value ?? null;
       const parsed = toNumber(raw);
 
       const existing = byClub.get(club);
-
       if (!existing) {
-        // store whatever we have (including parsed === null)
         byClub.set(club, { club, value: parsed, rawItem: item });
       } else {
-        // prefer numeric values over null; otherwise prefer higher numeric
         const a = existing.value;
         const b = parsed;
         if (a === null && b !== null) {
@@ -124,13 +120,13 @@ export default function Ranking() {
         } else if (a !== null && b !== null && b > a) {
           byClub.set(club, { club, value: b, rawItem: item });
         }
-        // else keep existing
+        // otherwise keep existing
       }
     }
 
     const arr = Array.from(byClub.values());
 
-    // sort: numeric desc first, then nulls last
+    // sort: numeric desc first, nulls last
     arr.sort((x, y) => {
       const a = x.value;
       const b = y.value;
@@ -141,33 +137,29 @@ export default function Ranking() {
       return a > b ? -1 : 1;
     });
 
-    // assign rank_position (ties: equal numeric -> same rank)
+    // assign rank_position (ties equal numeric -> same rank)
     let lastValue = null;
     let lastRank = 0;
-    let currentPos = 0;
     for (let i = 0; i < arr.length; i += 1) {
-      currentPos = i + 1;
       const val = arr[i].value;
+      const pos = i + 1;
       if (val === null) {
-        // assign incremental positions for nulls (after numerics)
-        arr[i].rank_position = currentPos;
+        arr[i].rank_position = pos;
       } else {
         if (lastValue !== null && val === lastValue) {
           arr[i].rank_position = lastRank;
         } else {
-          arr[i].rank_position = currentPos;
-          lastRank = currentPos;
+          arr[i].rank_position = pos;
+          lastRank = pos;
           lastValue = val;
         }
       }
     }
 
-    // return normalized items (rawItem with injected rank_position & computed value)
     return arr.map((r) => {
       const item = { ...r.rawItem };
       item.rank_position = r.rank_position;
-      // keep computed value (could be null)
-      item._computed_value = r.value;
+      item._computed_value = r.value === undefined ? null : r.value;
       return item;
     });
   }, [data]);
@@ -229,8 +221,7 @@ export default function Ranking() {
         const raw = item?.score ?? item?._computed_value ?? item?.iap ?? item?.iap_score;
         let value = toNumber(raw);
         const wasNull = value === null;
-        // fallback display value for charts/tables: 0 when missing
-        if (value === null) value = 0;
+        if (value === null) value = 0; // fallback for charts
         const club = getClubName(item);
         return { club, value, rawItem: item, wasNull };
       })
@@ -479,7 +470,7 @@ export default function Ranking() {
             title: function (tooltipItems) {
               if (!tooltipItems || tooltipItems.length === 0) return '';
               const label = tooltipItems[0].label;
-              return formatDateBR(String(label).slice(0, 10));
+              return formatDateBR(String(label).slice(0, 10)); // full DD/MM/YYYY in tooltip
             },
           },
         },
@@ -490,7 +481,7 @@ export default function Ranking() {
             callback: function (val) {
               try {
                 const label = (typeof this.getLabelForValue === 'function') ? this.getLabelForValue(val) : val;
-                return formatDayMonth(String(label).slice(0, 10));
+                return formatDayMonth(String(label).slice(0, 10)); // "22/12"
               } catch {
                 return String(val);
               }
@@ -620,13 +611,173 @@ export default function Ranking() {
 
         {/* Comparação (card) */}
         <section className={ctrlStyles.topicCard} style={{ marginTop: 12 }}>
-          {/* ... o restante da UI de comparação permanece igual ao seu original ... */}
           <div style={{ fontSize: 14, fontWeight: 700, marginBottom: 8 }}>Comparar clubes — evolução do IAP</div>
-          {/* (mantive a lógica original de carregamento de séries) */}
+
+          <div style={{ display: 'grid', gap: 8 }}>
+            <div style={{ fontSize: 12, opacity: 0.8 }}>
+              Top 5 vs Top 5: compara o Top 5 do ranking exibido (Data A) com o Top 5 de uma segunda data (Data B).
+            </div>
+
+            <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
+              <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
+                  <span style={{ width: 14, height: 12, display: 'inline-block', background: COLOR_A, borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
+                  <strong>Data A</strong>
+                </div>
+                <span style={{ marginLeft: 8, opacity: 0.9 }}>{COLOR_A}</span>
+              </div>
+
+              <label style={{ fontSize: 12 }}>Data B:</label>
+              <input
+                type="date"
+                value={compareDateB}
+                onChange={(e) => { setCompareDateB(e.target.value); setTop5BError(null); }}
+                className={ctrlStyles.dateInput}
+              />
+
+              <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+                <span style={{ width: 14, height: 12, display: 'inline-block', background: COLOR_B, borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
+                <strong>Data B</strong>
+                <span style={{ marginLeft: 8, opacity: 0.9 }}>{COLOR_B}</span>
+              </div>
+
+              <button
+                className={btnStyles.btn}
+                onClick={async () => {
+                  setTop5BError(null);
+                  setTop5BLoading(true);
+                  try {
+                    if (!compareDateB) throw new Error('Selecione a Data B.');
+                    const aItems = Array.isArray(tableItems) ? tableItems : [];
+
+                    const resB = await fetch(`/api/daily_ranking?date=${encodeURIComponent(compareDateB)}`);
+                    if (!resB.ok) throw new Error(`Falha ao buscar ranking da Data B (${resB.status})`);
+                    const bJson = await resB.json();
+                    const bItems = Array.isArray(bJson) ? bJson : Array.isArray(bJson?.data) ? bJson.data : [];
+
+                    setAbSummary(buildAbSummary(aItems.slice(0, 20), bItems.slice(0, 20)));
+
+                    const topA = aItems.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
+                    const topB = bItems.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
+                    const merged = [...topA.map((n) => `${n} (A)`), ...topB.map((n) => `${n} (B)`)];
+
+                    setCompareError(null);
+                    setCompareMap({});
+                    setCompareSelected(merged);
+                  } catch (e) {
+                    setTop5BError(e);
+                    setAbSummary(null);
+                  } finally {
+                    setTop5BLoading(false);
+                  }
+                }}
+                disabled={top5BLoading}
+              >
+                Carregar Top 5 A + B
+              </button>
+
+              {top5BLoading ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando…</span> : null}
+            </div>
+
+            {top5BError ? <div style={{ fontSize: 12, color: 'crimson' }}>Erro: {String(top5BError?.message ?? top5BError)}</div> : null}
+
+            {abSummary ? (
+              <div style={{ border: '1px solid rgba(0,0,0,0.04)', borderRadius: 8, padding: 10 }}>
+                <div style={{ fontSize: 13, fontWeight: 700 }}>Resumo A → B</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Entraram no Top 5 (B)</div>
+                    <div style={{ fontSize: 13 }}>{abSummary.entered.length ? abSummary.entered.join(', ') : '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Saíram do Top 5 (A)</div>
+                    <div style={{ fontSize: 13 }}>{abSummary.exited.length ? abSummary.exited.join(', ') : '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Maior alta (Δ IAP)</div>
+                    <div style={{ fontSize: 13 }}>{abSummary.bestUp ? `${abSummary.bestUp.name}: +${abSummary.bestUp.delta.toFixed(2)}` : '—'}</div>
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 12, opacity: 0.8 }}>Maior queda (Δ IAP)</div>
+                    <div style={{ fontSize: 13 }}>{abSummary.bestDown ? `${abSummary.bestDown.name}: ${abSummary.bestDown.delta.toFixed(2)}` : '—'}</div>
+                  </div>
+                </div>
+              </div>
+            ) : null}
+
+            <div style={{ fontSize: 12, opacity: 0.8, marginTop: 10 }}>
+              Modo manual: selecione até 5 clubes para sobrepor as linhas no mesmo gráfico.
+            </div>
+
+            {clubsLoading ? (
+              <div>Carregando clubes…</div>
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginTop: 8 }}>
+                {clubs.map((c) => {
+                  const name = c?.label;
+                  if (!name) return null;
+                  const checked = compareSelected.includes(name);
+                  const disabled = !checked && compareSelected.length >= (compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5);
+                  return (
+                    <label key={name} style={{ display: 'flex', gap: 8, alignItems: 'center', opacity: disabled ? 0.6 : 1 }}>
+                      <input type="checkbox" checked={checked} disabled={disabled} onChange={() => {
+                        setCompareError(null);
+                        setCompareSelected((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]);
+                      }} />
+                      <span>{name}</span>
+                    </label>
+                  );
+                })}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
+              <div style={{ fontSize: 12, opacity: 0.8 }}>
+                Selecionados: <strong>{compareSelected.length}</strong>/{compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5}
+              </div>
+
+              <button
+                className={btnStyles.btn}
+                onClick={() => {
+                  const source = Array.isArray(tableItems) ? tableItems : [];
+                  const top = source.map((it) => getClubName(it)).filter((n) => n && n !== '—').slice(0, 5);
+                  setCompareSelected(top);
+                }}
+                disabled={!Array.isArray(tableItems) || tableItems.length === 0}
+              >
+                Top 5 do dia
+              </button>
+
+              <button
+                className={btnStyles.btn}
+                onClick={() => { setCompareSelected([]); setCompareMap({}); setCompareError(null); }}
+                disabled={compareSelected.length === 0}
+              >
+                Limpar seleção
+              </button>
+
+              {compareBusy ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando séries…</span> : null}
+            </div>
+
+            {compareError ? <div style={{ fontSize: 13, marginTop: 8 }}>Erro ao carregar comparação: {String(compareError?.message ?? compareError)}</div> : null}
+
+            {compareAligned.datasets && compareAligned.datasets.length >= 1 ? (
+              <div style={{ height: 420, width: '100%', marginTop: 12 }}>
+                <Line data={{ labels: compareAligned.labels, datasets: compareAligned.datasets }} options={lineOptions} />
+              </div>
+            ) : (
+              <div style={{ fontSize: 12, opacity: 0.8, marginTop: 12 }}>
+                Selecione pelo menos 1 clube (modo manual) ou use “Carregar Top 5 A + B”.
+              </div>
+            )}
+          </div>
         </section>
 
+        {/* Nota explicativa sobre datas */}
         <div style={{ marginTop: 12, fontSize: 12, color: 'var(--muted)' }}>
           Observação: o gráfico mostra as datas disponíveis nas séries que foram carregadas para os clubes selecionados.
+          Se não aparecem pontos após 23/12, significa que as séries retornadas pela API não têm valores depois dessa data.
+          Para exibir mais histórico, aumente o parâmetro de busca das séries (por exemplo <code>?limit_days=365</code>) ou confirme que a API/DB contém dados posteriores.
         </div>
       </main>
     </div>
