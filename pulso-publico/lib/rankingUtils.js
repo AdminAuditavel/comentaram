@@ -1,6 +1,6 @@
 //pulso-publico/lib/rankingUtils.js
 
-export const MANUAL_PALETTE = ['#2563EB', '#16A34A', '#7C3AED', '#DC2626', '#0EA5E9'];
+export const MANUAL_PALETTE = ['#686466', '#839cb5', '#96d7eb', '#b1e1e9', '#f2e4f9'];
 export const COLOR_A = '#2563EB';
 export const COLOR_B = '#F97316';
 
