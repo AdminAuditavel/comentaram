@@ -1,5 +1,8 @@
-// utilitários para Ranking (extraído do componente principal)
-// Mantém compatibilidade com as chamadas anteriores.
+//pulso-publico/lib/rankingUtils.js
+
+export const MANUAL_PALETTE = ['#2563EB', '#16A34A', '#7C3AED', '#DC2626', '#0EA5E9'];
+export const COLOR_A = '#2563EB';
+export const COLOR_B = '#F97316';
 
 export const NF = new Intl.NumberFormat('pt-BR');
 
