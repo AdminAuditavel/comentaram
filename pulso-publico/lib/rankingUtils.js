@@ -148,6 +148,16 @@ function pickIapFromItem(it) {
 }
 
 export function buildAbSummary(aItems, bItems) {
+  const pickScore = (it) =>
+    toNumber(
+      it?.value ??
+        it?._computed_value ??
+        it?.iap_score ??
+        it?.score ??
+        it?.iap ??
+        null
+    );
+
   const aNames = aItems.map(getClubName).filter((n) => n && n !== '—');
   const bNames = bItems.map(getClubName).filter((n) => n && n !== '—');
 
@@ -157,24 +167,13 @@ export function buildAbSummary(aItems, bItems) {
   const entered = bNames.filter((n) => !setA.has(n));
   const exited = aNames.filter((n) => !setB.has(n));
 
-  function pickScore(it) {
-    return toNumber(
-      it?.value ??
-      it?._computed_value ??
-      it?.iap_score ??
-      it?.score ??
-      it?.iap ??
-      null
-    );
-  }
-  
   const aMap = new Map(
     aItems.map((it) => [
       getClubName(it),
       { score: pickScore(it), rank: toNumber(it?.rank_position) },
     ])
   );
-  
+
   const bMap = new Map(
     bItems.map((it) => [
       getClubName(it),
@@ -191,11 +190,14 @@ export function buildAbSummary(aItems, bItems) {
   for (const name of common) {
     const a = aMap.get(name);
     const b = bMap.get(name);
+
     const as = a?.score;
     const bs = b?.score;
+
     if (as === null || as === undefined || bs === null || bs === undefined) continue;
 
     const delta = bs - as;
+
     deltas.push({
       name,
       delta,
