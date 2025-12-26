@@ -1,3 +1,5 @@
+//components/InsightsPanel.jsx
+
 'use client';
 
 import React, { useMemo } from 'react';
