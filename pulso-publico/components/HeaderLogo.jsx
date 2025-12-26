@@ -8,13 +8,14 @@ import styles from './controls.module.css';
 /**
  * HeaderLogo - logo à esquerda + categoria; título centralizado
  * Props:
- *  - title: string (ex: "Ranking Diário")
- *  - category: string (ex: "Esporte")
+ *  - title (string) optional
+ *  - category (string) optional
+ *
+ * NOTE: uses /Logo_Comentaram_337D26.png placed in /public.
  */
 export default function HeaderLogo({ title = 'Ranking Diário', category = '' }) {
   useEffect(() => {
     // Hotfix: remove elemento com texto exato "Pulso — Ranking" se existir
-    // Fazemos uma busca por h1/h2/h3 no document e removemos apenas quando o texto for exatamente igual
     try {
       const els = Array.from(document.querySelectorAll('h1,h2,h3'));
       for (const el of els) {
@@ -24,7 +25,7 @@ export default function HeaderLogo({ title = 'Ranking Diário', category = '' })
         }
       }
     } catch (e) {
-      // não quebrar a execução por causa de correção visual
+      // não bloquear pela tentativa de correção visual
       // eslint-disable-next-line no-console
       console.warn('HeaderLogo: não foi possível remover texto duplicado (não crítico).', e);
     }
@@ -34,7 +35,13 @@ export default function HeaderLogo({ title = 'Ranking Diário', category = '' })
     <div className={styles.headerRow}>
       <div className={styles.leftGroup}>
         <Link href="/" className={styles.logoAnchor} aria-label="Comentaram — voltar para a página inicial">
-          <Image src="/Comentaram_#07889B.png" alt="Comentaram" width={160} height={40} priority />
+          <Image
+            src="/Logo_Comentaram_337D26.png"
+            alt="Comentaram"
+            width={160}
+            height={40}
+            priority
+          />
         </Link>
 
         {category ? (
