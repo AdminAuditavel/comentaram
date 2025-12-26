@@ -26,10 +26,48 @@ export function getClubName(item) {
   return '—';
 }
 
-export function toNumber(x) {
-  if (x === null || x === undefined || x === '') return null;
-  const n = typeof x === 'string' ? Number(String(x).replace(',', '.')) : Number(x);
-  return Number.isFinite(n) ? n : null;
+export function toNumber(input) {
+  if (input === null || input === undefined) return null;
+
+  if (typeof input === 'number') {
+    return Number.isFinite(input) ? input : null;
+  }
+
+  let s = String(input).trim();
+  if (!s) return null;
+
+  // negativo no formato (123,45)
+  let negative = false;
+  if (s.startsWith('(') && s.endsWith(')')) {
+    negative = true;
+    s = s.slice(1, -1).trim();
+  }
+
+  // remove espaços e símbolos irrelevantes
+  s = s.replace(/\s+/g, '');
+  s = s.replace(/[%]/g, '');
+
+  // mantém apenas dígitos, separadores e sinal
+  s = s.replace(/[^\d.,+-]/g, '');
+  if (!s) return null;
+
+  const hasDot = s.includes('.');
+  const hasComma = s.includes(',');
+
+  if (hasDot && hasComma) {
+    // pt-BR: 1.234,56 → 1234.56
+    s = s.replace(/\./g, '').replace(/,/g, '.');
+  } else if (hasComma) {
+    // decimal pt-BR: 12,34 → 12.34
+    s = s.replace(/,/g, '.');
+  } else {
+    // remove separadores de milhar
+    s = s.replace(/,/g, '');
+  }
+
+  const n = Number(s);
+  if (!Number.isFinite(n)) return null;
+  return negative ? -n : n;
 }
 
 export function isLabelA(label) {
