@@ -46,9 +46,9 @@ import {
 ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
 
 // cores usadas para comparações (A / B) e paleta manual
-const MANUAL_PALETTE = ['#E9F1FA', '#00ABE4', '#FFFFFF', '#b1e1e9', '#f2e4f9'];
-const COLOR_A = '#2563EB'; // azul (Data A)
-const COLOR_B = '#F97316'; // laranja (Data B)
+export const MANUAL_PALETTE = ['#D2EEFA', '#A3D8F1', '#54A6E1', '#255DAA', '#DE525E', '#FCE0D4'];
+export const COLOR_A = '#255DAA';
+export const COLOR_B = '#D2EEFA';
 
 /**
  * Ranking (refatorado, completo)
