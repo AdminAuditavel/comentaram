@@ -3,14 +3,10 @@
 
 import { useMemo, useState, useEffect, useRef } from 'react';
 import useSWR from 'swr';
-import Link from 'next/link';
-import Image from 'next/image';
 import { Line } from 'react-chartjs-2';
 
 import fetcher from './hooks/useFetcher';
 import TrendBadge from './TrendBadge';
-import Skeleton from './Skeleton';
-import LoadingChartPlaceholder from './LoadingChartPlaceholder';
 import btnStyles from './Button.module.css';
 import ctrlStyles from './controls.module.css';
 
@@ -28,13 +24,11 @@ import {
   getAggregationDateFromItem,
   formatDateBR,
   buildAbSummary,
-  NF,
   MANUAL_PALETTE,
   COLOR_A,
   COLOR_B,
 } from '../lib/rankingUtils';
 
-// Chart.js registration (if not already globally registered elsewhere)
 import {
   Chart as ChartJS,
   CategoryScale,
@@ -45,7 +39,16 @@ import {
   Tooltip,
   Legend,
 } from 'chart.js';
-ChartJS.register(CategoryScale, LinearScale, BarElement, PointElement, LineElement, Tooltip, Legend);
+
+ChartJS.register(
+  CategoryScale,
+  LinearScale,
+  BarElement,
+  PointElement,
+  LineElement,
+  Tooltip,
+  Legend
+);
 
 /* Helper para exibir só dia/mês: "22/12" */
 function formatDayMonth(yyyyMMdd) {
