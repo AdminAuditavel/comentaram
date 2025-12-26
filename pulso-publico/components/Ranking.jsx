@@ -1,4 +1,4 @@
-//pulso-publico/components/Ranking.jsx
+// /pulso-publico/components/Ranking.jsx
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
@@ -59,6 +59,10 @@ function formatDayMonth(yyyyMMdd) {
   return `${m[3]}/${m[2]}`;
 }
 
+function stripAB(label) {
+  return String(label || '').replace(/\s*\((A|B)\)\s*$/, '').trim();
+}
+
 export default function Ranking() {
   /* ========== filtros / estados ========== */
   const [selectedDate, setSelectedDate] = useState('');
@@ -68,14 +72,32 @@ export default function Ranking() {
   const [requestedDate, setRequestedDate] = useState('');
 
   // SWR: daily ranking
-  const rankingKey = selectedDate ? `/api/daily_ranking?date=${encodeURIComponent(selectedDate)}` : '/api/daily_ranking';
-  const { data: rankingJson, error: rankingError, isValidating: rankingLoading, mutate: mutateRanking } = useSWR(rankingKey, fetcher, {
+  const rankingKey = selectedDate
+    ? `/api/daily_ranking?date=${encodeURIComponent(selectedDate)}`
+    : '/api/daily_ranking';
+
+  const {
+    data: rankingJson,
+    error: rankingError,
+    isValidating: rankingLoading,
+    mutate: mutateRanking,
+  } = useSWR(rankingKey, fetcher, {
     revalidateOnFocus: false,
     shouldRetryOnError: true,
   });
 
-  const data = Array.isArray(rankingJson) ? rankingJson : Array.isArray(rankingJson?.data) ? rankingJson.data : [];
-  const resolvedFromApi = rankingJson && !Array.isArray(rankingJson) && rankingJson?.resolved_date ? String(rankingJson.resolved_date).slice(0, 10) : '';
+  const data = Array.isArray(rankingJson)
+    ? rankingJson
+    : Array.isArray(rankingJson?.data)
+      ? rankingJson.data
+      : [];
+
+  const resolvedFromApi =
+    rankingJson &&
+    !Array.isArray(rankingJson) &&
+    rankingJson?.resolved_date
+      ? String(rankingJson.resolved_date).slice(0, 10)
+      : '';
 
   useEffect(() => {
     setRequestedDate(selectedDate ? String(selectedDate).slice(0, 10) : '');
@@ -83,7 +105,9 @@ export default function Ranking() {
   }, [rankingJson, selectedDate, data, resolvedFromApi]);
 
   // clubs list
-  const { data: clubsJson, isValidating: clubsLoading } = useSWR('/api/clubs', fetcher, { revalidateOnFocus: false });
+  const { data: clubsJson, isValidating: clubsLoading } = useSWR('/api/clubs', fetcher, {
+    revalidateOnFocus: false,
+  });
   const clubs = Array.isArray(clubsJson) ? clubsJson : [];
 
   // effective aggregation date used for prev-day fetch etc
@@ -94,12 +118,7 @@ export default function Ranking() {
     return getAggregationDateFromItem(data[0]) || '';
   }, [resolvedDate, selectedDate, data]);
 
-  /* ========== aggregate / deduplicate clubs into a ranked list ==========
-     - Group by club name
-     - Choose representative per club preferring numeric values (highest)
-     - Keep clubs even if they only have non-numeric values
-     - Sort numeric desc; then clubs with null values last
-  */
+  /* ========== aggregate / deduplicate clubs into a ranked list ========== */
   const rankedData = useMemo(() => {
     if (!Array.isArray(data) || data.length === 0) return [];
 
@@ -124,13 +143,11 @@ export default function Ranking() {
         } else if (a !== null && b !== null && b > a) {
           byClub.set(club, { club, value: b, rawItem: item });
         }
-        // otherwise keep existing
       }
     }
 
     const arr = Array.from(byClub.values());
 
-    // sort: numeric desc first, nulls last
     arr.sort((x, y) => {
       const a = x.value;
       const b = y.value;
@@ -141,7 +158,6 @@ export default function Ranking() {
       return a > b ? -1 : 1;
     });
 
-    // assign rank_position (ties equal numeric -> same rank)
     let lastValue = null;
     let lastRank = 0;
     for (let i = 0; i < arr.length; i += 1) {
@@ -182,20 +198,32 @@ export default function Ranking() {
 
   const DebugPanel = () => {
     if (process.env.NODE_ENV === 'production') return null;
-    const sample = Array.isArray(data) ? data.slice(0, 8).map((it) => ({
-      club: getClubName(it),
-      rawScore: it?.score ?? it?.iap ?? it?.iap_score ?? null,
-      parsed: toNumber(it?.score ?? it?.iap ?? it?.iap_score ?? null),
-    })) : [];
-    const rankedSample = Array.isArray(rankedData) ? rankedData.slice(0, 8).map((it) => ({
-      club: getClubName(it),
-      computed: it._computed_value === null ? null : it._computed_value,
-      rank_position: it.rank_position,
-    })) : [];
+    const sample = Array.isArray(data)
+      ? data.slice(0, 8).map((it) => ({
+          club: getClubName(it),
+          rawScore: it?.score ?? it?.iap ?? it?.iap_score ?? null,
+          parsed: toNumber(it?.score ?? it?.iap ?? it?.iap_score ?? null),
+        }))
+      : [];
+    const rankedSample = Array.isArray(rankedData)
+      ? rankedData.slice(0, 8).map((it) => ({
+          club: getClubName(it),
+          computed: it._computed_value === null ? null : it._computed_value,
+          rank_position: it.rank_position,
+        }))
+      : [];
     return (
-      <div style={{ background: '#fff8', border: '1px solid rgba(0,0,0,0.06)', padding: 8, margin: '8px 0' }}>
+      <div
+        style={{
+          background: '#fff8',
+          border: '1px solid rgba(0,0,0,0.06)',
+          padding: 8,
+          margin: '8px 0',
+        }}
+      >
         <div style={{ fontSize: 12, marginBottom: 6, color: '#333' }}>
-          Debug: raw.length = {Array.isArray(data) ? data.length : 0} • ranked.length = {Array.isArray(rankedData) ? rankedData.length : 0}
+          Debug: raw.length = {Array.isArray(data) ? data.length : 0} • ranked.length ={' '}
+          {Array.isArray(rankedData) ? rankedData.length : 0}
         </div>
         <details style={{ fontSize: 11 }}>
           <summary>Sample raw → parsed</summary>
@@ -210,8 +238,6 @@ export default function Ranking() {
   };
 
   // table / rows — built from rankedData (unique clubs only).
-  // For display (charts/table) we provide a fallback displayValue = 0 when there is no numeric value,
-  // but keep _computed_value === null so trend logic and prev-day compare can differentiate.
   const clubOptions = useMemo(() => {
     if (!Array.isArray(rankedData)) return [];
     const names = rankedData.map(getClubName).filter((n) => n && n !== '—');
@@ -225,7 +251,7 @@ export default function Ranking() {
         const raw = item?.score ?? item?._computed_value ?? item?.iap ?? item?.iap_score;
         let value = toNumber(raw);
         const wasNull = value === null;
-        if (value === null) value = 0; // fallback for charts
+        if (value === null) value = 0;
         const club = getClubName(item);
         return { club, value, rawItem: item, wasNull };
       })
@@ -269,7 +295,9 @@ export default function Ranking() {
       }
 
       if (prevFetchCtrlRef.current) {
-        try { prevFetchCtrlRef.current.abort(); } catch {}
+        try {
+          prevFetchCtrlRef.current.abort();
+        } catch {}
       }
       const ctrl = new AbortController();
       prevFetchCtrlRef.current = ctrl;
@@ -279,7 +307,9 @@ export default function Ranking() {
       setPrevError(null);
 
       try {
-        const res = await fetch(`/api/daily_ranking?date=${encodeURIComponent(p)}`, { signal: ctrl.signal });
+        const res = await fetch(`/api/daily_ranking?date=${encodeURIComponent(p)}`, {
+          signal: ctrl.signal,
+        });
         if (!res.ok) {
           if (!cancelled) {
             setPrevRankMap(new Map());
@@ -330,7 +360,9 @@ export default function Ranking() {
     return () => {
       cancelled = true;
       if (prevFetchCtrlRef.current) {
-        try { prevFetchCtrlRef.current.abort(); } catch {}
+        try {
+          prevFetchCtrlRef.current.abort();
+        } catch {}
       }
     };
   }, [effectiveDate]);
@@ -340,7 +372,8 @@ export default function Ranking() {
     const name = getClubName(item);
     const prevRank = prevRankMap.get(name);
 
-    if (!prevDateUsed || prevRank === undefined || prevRank === null || !currRank) return <span style={{ opacity: 0.7 }}>—</span>;
+    if (!prevDateUsed || prevRank === undefined || prevRank === null || !currRank)
+      return <span style={{ opacity: 0.7 }}>—</span>;
 
     const delta = prevRank - currRank;
 
@@ -349,10 +382,15 @@ export default function Ranking() {
     return <TrendBadge direction="flat" value={0} />;
   }
 
-  /* ========== compare A/B (series) ========== */
+  /* ========== compare A/B (series) — dedupe por clube ========== */
   const compareFetchCtrlRef = useRef(null);
-  const [compareSelected, setCompareSelected] = useState([]); // labels (e.g. "Club (A)" or "Club")
-  const [compareMap, setCompareMap] = useState({}); // { label: normalizedSeries[] }
+
+  // labels: "Clube", "Clube (A)", "Clube (B)"
+  const [compareSelected, setCompareSelected] = useState([]);
+
+  // cache por clube real: { "Clube": normalizedSeries[] }
+  const [compareByClub, setCompareByClub] = useState({});
+
   const [compareBusy, setCompareBusy] = useState(false);
   const [compareError, setCompareError] = useState(null);
 
@@ -363,13 +401,23 @@ export default function Ranking() {
   const [abSummary, setAbSummary] = useState(null);
 
   useEffect(() => {
-    const need = compareSelected.filter((label) => !compareMap[label]);
+    const selectedRealNames = Array.from(
+      new Set(
+        compareSelected
+          .map((label) => stripAB(label))
+          .filter(Boolean)
+      )
+    );
+
+    const need = selectedRealNames.filter((realName) => !compareByClub[realName]);
     if (need.length === 0) return;
 
     let cancelled = false;
 
     if (compareFetchCtrlRef.current) {
-      try { compareFetchCtrlRef.current.abort(); } catch {}
+      try {
+        compareFetchCtrlRef.current.abort();
+      } catch {}
     }
     const ctrl = new AbortController();
     compareFetchCtrlRef.current = ctrl;
@@ -378,15 +426,24 @@ export default function Ranking() {
       setCompareBusy(true);
       try {
         const updates = {};
-        for (const label of need) {
+
+        for (const realName of need) {
           if (ctrl.signal.aborted) throw new Error('Abortado');
-          const realName = label.replace(/\s*\((A|B)\)\s*$/, '');
-          const res = await fetch(`/api/club_series?club=${encodeURIComponent(realName)}&limit_days=365`, { signal: ctrl.signal });
-          if (!res.ok) throw new Error(`Falha ao buscar série: ${label}`);
+
+          const res = await fetch(
+            `/api/club_series?club=${encodeURIComponent(realName)}&limit_days=365`,
+            { signal: ctrl.signal }
+          );
+
+          if (!res.ok) throw new Error(`Falha ao buscar série: ${realName}`);
+
           const json = await res.json();
-          updates[label] = normalizeSeries(json);
+          updates[realName] = normalizeSeries(json);
         }
-        if (!cancelled) setCompareMap((prev) => ({ ...prev, ...updates }));
+
+        if (!cancelled) {
+          setCompareByClub((prev) => ({ ...prev, ...updates }));
+        }
       } catch (e) {
         if (!cancelled && e?.name !== 'AbortError') setCompareError(e);
       } finally {
@@ -398,47 +455,57 @@ export default function Ranking() {
 
     return () => {
       cancelled = true;
-      try { ctrl.abort(); } catch {}
+      try {
+        ctrl.abort();
+      } catch {}
       compareFetchCtrlRef.current = null;
     };
-  }, [compareSelected]);
+  }, [compareSelected, compareByClub]);
 
   // Alinha séries em labels diárias entre min e max (preenche com null quando não há valor)
   const compareAligned = useMemo(() => {
-    const selected = compareSelected.filter((label) => compareMap[label]);
+    const selected = compareSelected.filter((label) => {
+      const realName = stripAB(label);
+      return !!compareByClub[realName];
+    });
+
     if (selected.length === 0) return { labels: [], datasets: [] };
 
-    // coleta todas as datas disponíveis nas séries
     const allDatesSet = new Set();
     selected.forEach((label) => {
-      (compareMap[label] || []).forEach((r) => {
+      const realName = stripAB(label);
+      (compareByClub[realName] || []).forEach((r) => {
         if (r && r.date) allDatesSet.add(String(r.date).slice(0, 10));
       });
     });
 
     if (allDatesSet.size === 0) return { labels: [], datasets: [] };
 
-    const dateArr = Array.from(allDatesSet).sort(); // YYYY-MM-DD ordering works lexicographically
+    const dateArr = Array.from(allDatesSet).sort();
 
-    // helpers UTC
     const toUTCDate = (isoYmd) => {
       const [y, m, d] = String(isoYmd).split('-').map((v) => Number(v));
       return new Date(Date.UTC(y, m - 1, d));
     };
     const toISOYMD = (dt) => dt.toISOString().slice(0, 10);
 
-    // generate continuous daily labels between min and max
     const minDate = dateArr[0];
     const maxDate = dateArr[dateArr.length - 1];
     const labels = [];
-    for (let cur = toUTCDate(minDate); cur <= toUTCDate(maxDate); cur.setUTCDate(cur.getUTCDate() + 1)) {
+    for (
+      let cur = toUTCDate(minDate);
+      cur <= toUTCDate(maxDate);
+      cur.setUTCDate(cur.getUTCDate() + 1)
+    ) {
       labels.push(toISOYMD(new Date(cur)));
     }
 
     let manualIndex = 0;
     const datasets = selected.map((label) => {
-      const map = new Map((compareMap[label] || []).map((r) => [String(r.date).slice(0, 10), r.value]));
+      const realName = stripAB(label);
+      const map = new Map((compareByClub[realName] || []).map((r) => [String(r.date).slice(0, 10), r.value]));
       const dataArr = labels.map((d) => (map.has(d) ? map.get(d) : null));
+
       let color = 'var(--c-1, #337d26)';
       if (/\(A\)\s*$/.test(label)) color = COLOR_A;
       else if (/\(B\)\s*$/.test(label)) color = COLOR_B;
@@ -446,6 +513,7 @@ export default function Ranking() {
         color = MANUAL_PALETTE[manualIndex % MANUAL_PALETTE.length];
         manualIndex += 1;
       }
+
       return {
         label,
         data: dataArr,
@@ -459,7 +527,7 @@ export default function Ranking() {
     });
 
     return { labels, datasets };
-  }, [compareSelected, compareMap]);
+  }, [compareSelected, compareByClub]);
 
   // opções do chart com formatação de ticks (DD/MM) e tooltip com DD/MM/AAAA
   const lineOptions = useMemo(() => {
@@ -474,7 +542,7 @@ export default function Ranking() {
             title: function (tooltipItems) {
               if (!tooltipItems || tooltipItems.length === 0) return '';
               const label = tooltipItems[0].label;
-              return formatDateBR(String(label).slice(0, 10)); // full DD/MM/YYYY in tooltip
+              return formatDateBR(String(label).slice(0, 10));
             },
           },
         },
@@ -484,8 +552,8 @@ export default function Ranking() {
           ticks: {
             callback: function (val) {
               try {
-                const label = (typeof this.getLabelForValue === 'function') ? this.getLabelForValue(val) : val;
-                return formatDayMonth(String(label).slice(0, 10)); // "22/12"
+                const label = typeof this.getLabelForValue === 'function' ? this.getLabelForValue(val) : val;
+                return formatDayMonth(String(label).slice(0, 10));
               } catch {
                 return String(val);
               }
@@ -514,7 +582,10 @@ export default function Ranking() {
       </div>
     );
 
-  const hasAnyData = (Array.isArray(rankedData) && rankedData.length > 0) || (Array.isArray(data) && data.length > 0);
+  const hasAnyData =
+    (Array.isArray(rankedData) && rankedData.length > 0) ||
+    (Array.isArray(data) && data.length > 0);
+
   if (!hasAnyData) return <div className={ctrlStyles.container}>Nenhum dado disponível</div>;
 
   const linkClub = (name) => `/club/${encodeURIComponent(name)}`;
@@ -540,7 +611,12 @@ export default function Ranking() {
             </span>
           ) : null}
 
-          {selectedClub ? <> | Clube: <strong>{selectedClub}</strong></> : null}
+          {selectedClub ? (
+            <>
+              {' '}
+              | Clube: <strong>{selectedClub}</strong>
+            </>
+          ) : null}
 
           {prevLoading ? (
             <span style={{ marginLeft: 10, fontSize: 12, opacity: 0.75 }}>Calculando comparações…</span>
@@ -566,7 +642,9 @@ export default function Ranking() {
           />
           <button
             className={btnStyles.btn}
-            onClick={() => { setSelectedDate(''); }}
+            onClick={() => {
+              setSelectedDate('');
+            }}
             disabled={rankingLoading}
             title="Voltar para o padrão (último dia disponível)"
           >
@@ -577,11 +655,15 @@ export default function Ranking() {
           <select value={selectedClub} onChange={(e) => setSelectedClub(e.target.value)} style={{ padding: 4 }}>
             <option value="">Todos</option>
             {clubOptions.map((name) => (
-              <option key={name} value={name}>{name}</option>
+              <option key={name} value={name}>
+                {name}
+              </option>
             ))}
           </select>
 
-          <button className={btnStyles.btn} onClick={() => setSelectedClub('')} disabled={!selectedClub}>Limpar clube</button>
+          <button className={btnStyles.btn} onClick={() => setSelectedClub('')} disabled={!selectedClub}>
+            Limpar clube
+          </button>
         </div>
 
         {/* Insights (card) */}
@@ -594,7 +676,13 @@ export default function Ranking() {
           </div>
 
           <div style={{ marginTop: 10 }}>
-            <InsightsPanel tableItems={tableItems} prevMetricsMap={prevMetricsMap} prevDateUsed={prevDateUsed} effectiveDate={effectiveDate} linkClub={linkClub} />
+            <InsightsPanel
+              tableItems={tableItems}
+              prevMetricsMap={prevMetricsMap}
+              prevDateUsed={prevDateUsed}
+              effectiveDate={effectiveDate}
+              linkClub={linkClub}
+            />
           </div>
         </section>
 
@@ -625,24 +713,43 @@ export default function Ranking() {
             <div style={{ display: 'flex', gap: 10, alignItems: 'center', flexWrap: 'wrap' }}>
               <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <div style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-                  <span style={{ width: 14, height: 12, display: 'inline-block', background: COLOR_A, borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
+                  <span
+                    style={{
+                      width: 14,
+                      height: 12,
+                      display: 'inline-block',
+                      background: COLOR_A,
+                      borderRadius: 2,
+                      border: '1px solid rgba(0,0,0,0.06)',
+                    }}
+                  />
                   <strong>Data A</strong>
                 </div>
-                <span style={{ marginLeft: 8, opacity: 0.9 }}>{COLOR_A}</span>
               </div>
 
               <label style={{ fontSize: 12 }}>Data B:</label>
               <input
                 type="date"
                 value={compareDateB}
-                onChange={(e) => { setCompareDateB(e.target.value); setTop5BError(null); }}
+                onChange={(e) => {
+                  setCompareDateB(e.target.value);
+                  setTop5BError(null);
+                }}
                 className={ctrlStyles.dateInput}
               />
 
               <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
-                <span style={{ width: 14, height: 12, display: 'inline-block', background: COLOR_B, borderRadius: 2, border: '1px solid rgba(0,0,0,0.06)' }} />
+                <span
+                  style={{
+                    width: 14,
+                    height: 12,
+                    display: 'inline-block',
+                    background: COLOR_B,
+                    borderRadius: 2,
+                    border: '1px solid rgba(0,0,0,0.06)',
+                  }}
+                />
                 <strong>Data B</strong>
-                <span style={{ marginLeft: 8, opacity: 0.9 }}>{COLOR_B}</span>
               </div>
 
               <button
@@ -650,12 +757,15 @@ export default function Ranking() {
                 onClick={async () => {
                   setTop5BError(null);
                   setTop5BLoading(true);
+
                   try {
                     if (!compareDateB) throw new Error('Selecione a Data B.');
+
                     const aItems = Array.isArray(tableItems) ? tableItems : [];
 
                     const resB = await fetch(`/api/daily_ranking?date=${encodeURIComponent(compareDateB)}`);
                     if (!resB.ok) throw new Error(`Falha ao buscar ranking da Data B (${resB.status})`);
+
                     const bJson = await resB.json();
                     const bItems = Array.isArray(bJson) ? bJson : Array.isArray(bJson?.data) ? bJson.data : [];
 
@@ -666,7 +776,7 @@ export default function Ranking() {
                     const merged = [...topA.map((n) => `${n} (A)`), ...topB.map((n) => `${n} (B)`)];
 
                     setCompareError(null);
-                    setCompareMap({});
+                    // Não zera cache: evita refetch/flicker e dedupe A/B
                     setCompareSelected(merged);
                   } catch (e) {
                     setTop5BError(e);
@@ -683,12 +793,21 @@ export default function Ranking() {
               {top5BLoading ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando…</span> : null}
             </div>
 
-            {top5BError ? <div style={{ fontSize: 12, color: 'crimson' }}>Erro: {String(top5BError?.message ?? top5BError)}</div> : null}
+            {top5BError ? (
+              <div style={{ fontSize: 12, color: 'crimson' }}>Erro: {String(top5BError?.message ?? top5BError)}</div>
+            ) : null}
 
             {abSummary ? (
               <div style={{ border: '1px solid rgba(0,0,0,0.04)', borderRadius: 8, padding: 10 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Resumo A → B</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 8 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
+                    gap: 10,
+                    marginTop: 8,
+                  }}
+                >
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Entraram no Top 5 (B)</div>
                     <div style={{ fontSize: 13 }}>{abSummary.entered.length ? abSummary.entered.join(', ') : '—'}</div>
@@ -699,11 +818,15 @@ export default function Ranking() {
                   </div>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Maior alta (Δ IAP)</div>
-                    <div style={{ fontSize: 13 }}>{abSummary.bestUp ? `${abSummary.bestUp.name}: +${abSummary.bestUp.delta.toFixed(2)}` : '—'}</div>
+                    <div style={{ fontSize: 13 }}>
+                      {abSummary.bestUp ? `${abSummary.bestUp.name}: +${abSummary.bestUp.delta.toFixed(2)}` : '—'}
+                    </div>
                   </div>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Maior queda (Δ IAP)</div>
-                    <div style={{ fontSize: 13 }}>{abSummary.bestDown ? `${abSummary.bestDown.name}: ${abSummary.bestDown.delta.toFixed(2)}` : '—'}</div>
+                    <div style={{ fontSize: 13 }}>
+                      {abSummary.bestDown ? `${abSummary.bestDown.name}: ${abSummary.bestDown.delta.toFixed(2)}` : '—'}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -716,18 +839,39 @@ export default function Ranking() {
             {clubsLoading ? (
               <div>Carregando clubes…</div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 8, marginTop: 8 }}>
+              <div
+                style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: 8,
+                  marginTop: 8,
+                }}
+              >
                 {clubs.map((c) => {
                   const name = c?.label;
                   if (!name) return null;
+
                   const checked = compareSelected.includes(name);
-                  const disabled = !checked && compareSelected.length >= (compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5);
+                  const hasAB = compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x)));
+                  const limit = hasAB ? 10 : 5;
+                  const disabled = !checked && compareSelected.length >= limit;
+
                   return (
-                    <label key={name} style={{ display: 'flex', gap: 8, alignItems: 'center', opacity: disabled ? 0.6 : 1 }}>
-                      <input type="checkbox" checked={checked} disabled={disabled} onChange={() => {
-                        setCompareError(null);
-                        setCompareSelected((prev) => prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]);
-                      }} />
+                    <label
+                      key={name}
+                      style={{ display: 'flex', gap: 8, alignItems: 'center', opacity: disabled ? 0.6 : 1 }}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={checked}
+                        disabled={disabled}
+                        onChange={() => {
+                          setCompareError(null);
+                          setCompareSelected((prev) =>
+                            prev.includes(name) ? prev.filter((x) => x !== name) : [...prev, name]
+                          );
+                        }}
+                      />
                       <span>{name}</span>
                     </label>
                   );
@@ -737,7 +881,9 @@ export default function Ranking() {
 
             <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap', marginTop: 12 }}>
               <div style={{ fontSize: 12, opacity: 0.8 }}>
-                Selecionados: <strong>{compareSelected.length}</strong>/{compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5}
+                Selecionados:{' '}
+                <strong>{compareSelected.length}</strong>/
+                {compareSelected.some((x) => /\((A|B)\)\s*$/.test(String(x))) ? 10 : 5}
               </div>
 
               <button
@@ -754,7 +900,11 @@ export default function Ranking() {
 
               <button
                 className={btnStyles.btn}
-                onClick={() => { setCompareSelected([]); setCompareMap({}); setCompareError(null); }}
+                onClick={() => {
+                  setCompareSelected([]);
+                  // mantém cache para reuso; limpa só erro
+                  setCompareError(null);
+                }}
                 disabled={compareSelected.length === 0}
               >
                 Limpar seleção
@@ -763,7 +913,11 @@ export default function Ranking() {
               {compareBusy ? <span style={{ fontSize: 12, opacity: 0.75 }}>Carregando séries…</span> : null}
             </div>
 
-            {compareError ? <div style={{ fontSize: 13, marginTop: 8 }}>Erro ao carregar comparação: {String(compareError?.message ?? compareError)}</div> : null}
+            {compareError ? (
+              <div style={{ fontSize: 13, marginTop: 8 }}>
+                Erro ao carregar comparação: {String(compareError?.message ?? compareError)}
+              </div>
+            ) : null}
 
             {compareAligned.datasets && compareAligned.datasets.length >= 1 ? (
               <div style={{ height: 420, width: '100%', marginTop: 12 }}>
