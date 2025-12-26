@@ -55,6 +55,12 @@ function formatDayMonth(yyyyMMdd) {
   return `${m[3]}/${m[2]}`;
 }
 
+/**
+ * Ranking atualizado:
+ * - conecta linhas no compare A vs B (spanGaps: true) para evitar pontos isolados sem segmento
+ * - exibe X axis como DD/MM e tooltip com DD/MM/AAAA
+ * - mostra swatches de cor para Data A / Data B
+ */
 export default function Ranking() {
   /* ========== filtros / estados ========== */
   const [selectedDate, setSelectedDate] = useState('');
@@ -111,7 +117,7 @@ export default function Ranking() {
       if (value === null) continue;
 
       const existing = byClub.get(club);
-      // prefer higher value; if tie, keep existing (first seen) — you can change tie-breaker here
+      // prefer higher value; if tie, keep first seen (you can change tie-breaker)
       if (!existing || value > existing.value) {
         byClub.set(club, { club, value, rawItem: item });
       }
@@ -373,6 +379,7 @@ export default function Ranking() {
   }, [compareSelected]);
 
   // Alinha séries em labels diárias entre min e max (preenche com null quando não há valor)
+  // Agora usa spanGaps: true para conectar a linha entre pontos (caso prefira gaps, mude para false)
   const compareAligned = useMemo(() => {
     const selected = compareSelected.filter((label) => compareMap[label]);
     if (selected.length === 0) return { labels: [], datasets: [] };
@@ -452,6 +459,7 @@ export default function Ranking() {
         x: {
           ticks: {
             callback: function (val) {
+              // this.getLabelForValue retorna o label (YYYY-MM-DD)
               try {
                 const label = (typeof this.getLabelForValue === 'function') ? this.getLabelForValue(val) : val;
                 return formatDayMonth(String(label).slice(0, 10)); // "22/12"
@@ -471,6 +479,7 @@ export default function Ranking() {
   }, []);
 
   /* ========== render guards ========== */
+  // show "Nenhum dado disponível" only if both raw data and rankedData are empty
   if (rankingLoading) return <div className={ctrlStyles.container}>Carregando ranking…</div>;
 
   if (rankingError)
@@ -483,7 +492,8 @@ export default function Ranking() {
       </div>
     );
 
-  if (!data || !Array.isArray(data) || data.length === 0) return <div className={ctrlStyles.container}>Nenhum dado disponível</div>;
+  const hasAnyData = (Array.isArray(rankedData) && rankedData.length > 0) || (Array.isArray(data) && data.length > 0);
+  if (!hasAnyData) return <div className={ctrlStyles.container}>Nenhum dado disponível</div>;
 
   const linkClub = (name) => `/club/${encodeURIComponent(name)}`;
 
