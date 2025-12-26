@@ -326,7 +326,7 @@ export default function Ranking() {
 
   return (
     <div style={{ display: 'grid', gap: 18 }}>
-      <HeaderLogo title="Ranking Diário" />
+      <HeaderLogo title="Ranking Diário" category="Esporte"/>
 
       <div style={{ fontSize: 13, opacity: 0.85 }}>
         Exibindo: <strong>{formatDateBR(effectiveDate)}</strong>
