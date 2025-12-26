@@ -1,83 +1,31 @@
 //components/ChartPanel.jsx
+
 'use client';
 
 import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
-import { MANUAL_PALETTE, toNumber } from '../lib/rankingUtils';
+import { MANUAL_PALETTE } from '../lib/rankingUtils';
 
-import {
-  Chart as ChartJS,
-  CategoryScale,
-  LinearScale,
-  BarElement,
-  Tooltip,
-  Legend,
-} from 'chart.js';
+function toNumber(x) {
+  if (x === null || x === undefined || x === '') return null;
+  const n = typeof x === 'string' ? Number(String(x).replace(',', '.')) : Number(x);
+  return Number.isFinite(n) ? n : null;
+}
 
-// IMPORTANT: registre aqui também (garante o Bar mesmo se tree-shaking modular ocorrer)
-ChartJS.register(CategoryScale, LinearScale, BarElement, Tooltip, Legend);
-
-/**
- * ChartPanel
- * Props:
- *  - rows: array of {club, value} (value precisa ser number)
- *  - loading: boolean
- */
 export default function ChartPanel({ rows = [], loading = false }) {
   const primary = MANUAL_PALETTE[0] ?? '#337d26';
 
-  // Sanitiza + ordena + limita (evita gráfico “achatado” quando há muitos clubes)
-  const cleaned = useMemo(() => {
-    if (!Array.isArray(rows)) return [];
-
-    const arr = rows
+  const clean = useMemo(() => {
+    const arr = Array.isArray(rows) ? rows : [];
+    return arr
       .map((r) => {
-        const club = r?.club ? String(r.club) : '';
-        const v = toNumber(r?.value);
+        const club = r?.club;
+        const v = toNumber(r?.value ?? r?.score ?? r?.iap ?? r?.iap_score ?? null);
         return { club, value: v };
       })
-      .filter((r) => r.club && r.club !== '—' && r.value !== null && Number.isFinite(r.value));
-
-    // ordena desc (maior IAP primeiro)
-    arr.sort((a, b) => b.value - a.value);
-
-    // top N para legibilidade
-    return arr.slice(0, 20);
+      .filter((r) => r.club && r.club !== '—' && r.value !== null);
   }, [rows]);
-
-  const barData = useMemo(() => {
-    return {
-      labels: cleaned.map((r) => r.club),
-      datasets: [
-        {
-          label: 'IAP',
-          data: cleaned.map((r) => r.value),
-          backgroundColor: primary,
-        },
-      ],
-    };
-  }, [cleaned, primary]);
-
-  const barOptions = useMemo(() => {
-    return {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: { enabled: true },
-      },
-      scales: {
-        x: {
-          ticks: {
-            autoSkip: true,
-            maxRotation: 0,
-          },
-        },
-        y: { beginAtZero: true },
-      },
-    };
-  }, []);
 
   if (loading) {
     return (
@@ -87,15 +35,25 @@ export default function ChartPanel({ rows = [], loading = false }) {
     );
   }
 
-  if (!cleaned.length) {
+  if (clean.length === 0) {
     return (
-      <div style={{ height: 360, width: '100%', display: 'grid', placeItems: 'center' }}>
-        <div style={{ fontSize: 12, opacity: 0.8 }}>
-          Sem dados numéricos para plotar (verifique se <code>rows[].value</code> está vindo como número).
-        </div>
+      <div style={{ height: 360, width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: 0.8 }}>
+        Sem dados para plotar.
       </div>
     );
   }
+
+  const barData = {
+    labels: clean.map((r) => r.club),
+    datasets: [{ label: 'IAP', data: clean.map((r) => r.value), backgroundColor: primary }],
+  };
+
+  const barOptions = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { enabled: true } },
+    scales: { y: { beginAtZero: true } },
+  };
 
   return (
     <div style={{ height: 360, width: '100%' }}>
