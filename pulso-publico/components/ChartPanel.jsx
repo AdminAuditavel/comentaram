@@ -6,7 +6,7 @@ import { Bar } from 'react-chartjs-2';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
 import { MANUAL_PALETTE } from '../lib/rankingUtils';
 import ctrlStyles from './controls.module.css';
-import '../styles/chart-tooltip.css'; // adicione este import para carregar o CSS sugerido
+import '../styles/chart-tooltip.css';
 
 function toNumber(x) {
   if (x === null || x === undefined || x === '') return null;
@@ -120,14 +120,24 @@ export default function ChartPanel({
     );
   }
 
-  // cor única (Opção A)
+  // Opção 2: cor por movimento (uma cor por barra)
+  const bgColors = clean.map((r) => {
+    // sem comparação -> cor padrão
+    if (!prevDateUsed) return primary;
+    // rankDelta priorizado
+    if (r.rankDelta === null || r.rankDelta === undefined) return '#6c9bd1'; // neutro (azul suave)
+    if (r.rankDelta > 0) return '#1b7f3a'; // subiu -> verde
+    if (r.rankDelta < 0) return '#c62828'; // caiu -> vermelho
+    return '#8d8d8d'; // empate/zero -> cinza
+  });
+
   const barData = {
     labels: clean.map((r) => r.club),
     datasets: [
       {
         label: 'IAP',
         data: clean.map((r) => r.value),
-        backgroundColor: primary,
+        backgroundColor: bgColors,
         borderWidth: 0,
         borderRadius: 10,
         barThickness: 18,
@@ -170,6 +180,8 @@ export default function ChartPanel({
         const innerRight = Math.min(xEnd - padIn, chartArea.right - 6);
         const innerWidth = innerRight - innerLeft;
 
+        // Se a cor da barra for muito clara (não prevista aqui), poderíamos trocar o fillStyle.
+        // Como usamos tons escuros/suficientes, mantemos branco interno.
         ctx.font = insideFont;
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'left';
@@ -201,7 +213,7 @@ export default function ChartPanel({
     },
   };
 
-  // tooltip externo: ANEXADO AO BODY e position: fixed
+  // tooltip externo anexado ao body (position: fixed)
   const externalTooltip = (context) => {
     const tooltip = context.tooltip;
     const chart = context.chart;
@@ -211,8 +223,7 @@ export default function ChartPanel({
     if (!tooltipEl) {
       tooltipEl = document.createElement('div');
       tooltipEl.className = 'chartjs-custom-tooltip';
-      // estilos básicos (aplicados também por chart-tooltip.css)
-      tooltipEl.style.position = 'fixed'; // fixed para não ser cortado
+      tooltipEl.style.position = 'fixed';
       tooltipEl.style.pointerEvents = 'none';
       tooltipEl.style.transition = 'all .06s ease';
       tooltipEl.style.background = 'rgba(255,255,255,0.98)';
@@ -293,7 +304,7 @@ export default function ChartPanel({
 
     tooltipEl.innerHTML = `${titleHtml}${datesHtml}`;
 
-    // posicionamento EXATO: baseado no elemento da barra (meta.data[dataIndex])
+    // posicionamento exato baseado na barra (meta.data[dataIndex])
     const meta = chart.getDatasetMeta(0);
     const bar = meta && meta.data && meta.data[dataIndex];
     let sourceClientX = null;
@@ -305,7 +316,6 @@ export default function ChartPanel({
           ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
           : bar;
       if (props && typeof props.x === 'number' && typeof props.y === 'number') {
-        // props.x/props.y são coordenadas em canvas; convertemos para client usando canvas rect
         const canvasRect = chart.canvas.getBoundingClientRect();
         sourceClientX = canvasRect.left + props.x;
         sourceClientY = canvasRect.top + props.y;
@@ -316,7 +326,6 @@ export default function ChartPanel({
       }
     }
 
-    // fallback para caretX/caretY se não obtivemos a posição da barra
     if (sourceClientX === null || sourceClientY === null) {
       const canvasRect = chart.canvas.getBoundingClientRect();
       const caretX = tooltip.caretX ?? canvasRect.width / 2;
@@ -325,7 +334,6 @@ export default function ChartPanel({
       sourceClientY = canvasRect.top + caretY;
     }
 
-    // força calcular dimensões do tooltip
     tooltipEl.style.left = '0px';
     tooltipEl.style.top = '0px';
     tooltipEl.style.opacity = '0';
@@ -335,7 +343,6 @@ export default function ChartPanel({
     const ttWidth = rect.width || 160;
     const ttHeight = rect.height || 40;
 
-    // calcula left/top relativos ao viewport (position: fixed)
     let left = sourceClientX - ttWidth / 2;
     const minLeft = 8;
     const maxLeft = window.innerWidth - ttWidth - 8;
@@ -349,14 +356,18 @@ export default function ChartPanel({
     const maxTop = window.innerHeight - ttHeight - 8;
 
     let top;
-    // prefer acima (se couber), senão abaixo, senão clamp
     if (topAbove >= minTop) top = topAbove;
     else if (topBelow <= maxTop) top = topBelow;
     else top = Math.min(Math.max(topAbove, minTop), maxTop);
 
-    // aplica (position: fixed usa coordenadas de viewport)
-    tooltipEl.style.left = `${Math.round(left)}px`;
-    tooltipEl.style.top = `${Math.round(top)}px`;
+    // position: fixed -> usar coordenadas de viewport
+    // convert sourceClient* (which are client coords relative to document) to viewport coords
+    // but since we used client rect + window scroll, they are already absolute; for fixed we use viewport values:
+    const viewportLeft = left - window.scrollX;
+    const viewportTop = top - window.scrollY;
+
+    tooltipEl.style.left = `${Math.round(viewportLeft)}px`;
+    tooltipEl.style.top = `${Math.round(viewportTop)}px`;
     tooltipEl.style.opacity = '1';
     tooltipEl.style.pointerEvents = 'none';
   };
