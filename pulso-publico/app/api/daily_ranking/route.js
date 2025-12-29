@@ -43,7 +43,9 @@ async function getLatestAggregationDate(base, supabaseKey) {
     const text = await res.text();
     if (!res.ok) continue;
     const arr = safeJson(text);
-    const d = arr?.[0]?.aggregation_date ? String(arr[0].aggregation_date).slice(0, 10) : "";
+    const d = arr?.[0]?.aggregation_date
+      ? String(arr[0].aggregation_date).slice(0, 10)
+      : "";
     if (d) return d;
   }
   return "";
@@ -55,15 +57,25 @@ export async function GET(req) {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      return jsonResp({ error: "SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados" }, 500);
+      return jsonResp(
+        { error: "SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados" },
+        500
+      );
     }
 
     const incoming = new URL(req.url).searchParams;
 
+    // detecta se o cliente informou "date" (não pode fazer fallback nesse caso)
+    const hadDateParam =
+      incoming.has("date") && (incoming.get("date") || "").trim() !== "";
+
     // date opcional (YYYY-MM-DD). Se não vier, usa último dia.
     let requestedDate = (incoming.get("date") || "").trim();
     if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
-      return jsonResp({ error: "Parâmetro date deve estar no formato YYYY-MM-DD" }, 400);
+      return jsonResp(
+        { error: "Parâmetro date deve estar no formato YYYY-MM-DD" },
+        400
+      );
     }
 
     const base = supabaseUrl.replace(/\/$/, "") + "/rest/v1";
@@ -72,7 +84,10 @@ export async function GET(req) {
     if (!requestedDate) {
       requestedDate = await getLatestAggregationDate(base, supabaseKey);
       if (!requestedDate) {
-        return jsonResp({ error: "Não foi possível determinar a data mais recente do ranking" }, 500);
+        return jsonResp(
+          { error: "Não foi possível determinar a data mais recente do ranking" },
+          500
+        );
       }
     }
 
@@ -93,6 +108,7 @@ export async function GET(req) {
     let usedResource = "";
     let lastErrorText = "";
 
+    // tenta buscar a data solicitada/resolvida
     for (const resource of candidates) {
       const target = `${base}/${resource}?${params.toString()}`;
       const res = await sbFetch(target, supabaseKey);
@@ -108,9 +124,32 @@ export async function GET(req) {
       }
     }
 
-    // Se não achou nada para a data pedida (ou resolvida), tenta fallback p/ último dia com dados
-    if (rankings && rankings.length === 0) {
+    if (!rankings) {
+      return jsonResp(
+        {
+          error: "Erro ao buscar daily_ranking (nenhuma fonte retornou ok)",
+          details: lastErrorText,
+        },
+        500
+      );
+    }
+
+    // Se o cliente INFORMOU a data e não há dados, NÃO faz fallback:
+    // retorna vazio para o front saber que não existe “dia anterior”.
+    if (rankings.length === 0 && hadDateParam) {
+      return jsonResp({
+        resolved_date: requestedDate,
+        source: usedResource || "daily_ranking_with_names",
+        count: 0,
+        data: [],
+        note: "No data for requested date",
+      });
+    }
+
+    // Se a data NÃO foi informada (modo padrão) e não há dados, faz fallback p/ último dia com dados
+    if (rankings.length === 0 && !hadDateParam) {
       const fallbackDate = await getLatestAggregationDate(base, supabaseKey);
+
       if (fallbackDate && fallbackDate !== requestedDate) {
         const p2 = new URLSearchParams(params);
         p2.set("aggregation_date", `eq.${fallbackDate}`);
@@ -140,7 +179,7 @@ export async function GET(req) {
     if (!rankings) {
       return jsonResp(
         {
-          error: "Erro ao buscar daily_ranking (nenhuma fonte retornou ok)",
+          error: "Erro ao buscar daily_ranking (fallback falhou)",
           details: lastErrorText,
         },
         500
