@@ -4,7 +4,7 @@
 import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
-import { MANUAL_PALETTE } from '../lib/rankingUtils';
+import { MANUAL_PALETTE, formatDateBR } from '../lib/rankingUtils';
 import ctrlStyles from './controls.module.css';
 
 function toNumber(x) {
@@ -33,6 +33,7 @@ export default function ChartPanel({
   prevMetricsMap = null,
   prevRankMap = null,
   prevDateUsed = '',
+  effectiveDate = '', // nova prop: data efetiva/base do ranking (ISO YYYY-MM-DD)
 }) {
   const primary = MANUAL_PALETTE[0] ?? '#337d26';
 
@@ -140,7 +141,6 @@ export default function ChartPanel({
       ctx.textBaseline = 'middle';
 
       const insideFont = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
-      // valor: fonte menor e sem negrito (peso 400)
       const valueFont = '400 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
       // mapeia explicitamente dataIndex -> elemento gráfico
@@ -265,6 +265,19 @@ export default function ChartPanel({
   // altura do card: ocupa quase todo o viewport para dar efeito "full screen card"
   const cardHeight = `calc(100vh - 140px)`; // ajuste se necessário
 
+  // Formata as datas para BR (se disponíveis)
+  const baseLabel = effectiveDate ? formatDateBR(String(effectiveDate).slice(0, 10)) : '';
+  const prevLabel = prevDateUsed ? formatDateBR(String(prevDateUsed).slice(0, 10)) : '';
+
+  let comparisonLine = 'Sem comparação (sem dia anterior).';
+  if (baseLabel && prevLabel) {
+    comparisonLine = `Comparação: ${baseLabel} (base) vs ${prevLabel} (anterior).`;
+  } else if (baseLabel) {
+    comparisonLine = `Data: ${baseLabel}.`;
+  } else if (prevLabel) {
+    comparisonLine = `Comparação: vs ${prevLabel}.`;
+  }
+
   return (
     <section className={ctrlStyles.topicCard} style={{ height: cardHeight, display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 14, fontWeight: 700 }}>Ranking — gráfico amplo</div>
@@ -274,7 +287,7 @@ export default function ChartPanel({
       </div>
 
       <div style={{ fontSize: 13, opacity: 0.8 }}>
-        {prevDateUsed ? `Comparação: vs ${prevDateUsed}.` : 'Sem comparação (sem dia anterior).'} Passe o mouse/toque nas barras para detalhes.
+        {comparisonLine} Passe o mouse/toque nas barras para detalhes.
       </div>
     </section>
   );
