@@ -10,7 +10,6 @@ async function sbFetch(url, supabaseKey) {
       Authorization: `Bearer ${supabaseKey}`,
       Accept: "application/json",
     },
-    // cache na Vercel (ISR para rotas)
     next: { revalidate },
   });
 }
@@ -30,25 +29,163 @@ function safeJson(text) {
   }
 }
 
-async function getLatestAggregationDate(base, supabaseKey) {
+const RANKING_SOURCES = ["daily_ranking_with_names", "daily_ranking", "daily_rankings"];
+
+// ajuste aqui se o nome real do recurso for diferente
+const AGG_SOURCE = "daily_aggregations_v2";
+const CLUBS_SOURCE = "clubs";
+
+function isYmd(s) {
+  return /^\d{4}-\d{2}-\d{2}$/.test(String(s || ""));
+}
+
+function toNumber(x) {
+  const n = Number(x);
+  return Number.isFinite(n) ? n : null;
+}
+
+async function getLatestAggregationDateFrom(base, supabaseKey, resource) {
   const q = new URLSearchParams();
   q.set("select", "aggregation_date");
   q.set("order", "aggregation_date.desc");
   q.set("limit", "1");
 
-  const candidates = ["daily_ranking_with_names", "daily_ranking", "daily_rankings"];
-  for (const resource of candidates) {
-    const url = `${base}/${resource}?${q.toString()}`;
-    const res = await sbFetch(url, supabaseKey);
-    const text = await res.text();
-    if (!res.ok) continue;
-    const arr = safeJson(text);
-    const d = arr?.[0]?.aggregation_date
-      ? String(arr[0].aggregation_date).slice(0, 10)
-      : "";
-    if (d) return d;
+  const url = `${base}/${resource}?${q.toString()}`;
+  const res = await sbFetch(url, supabaseKey);
+  const text = await res.text();
+  if (!res.ok) return "";
+  const arr = safeJson(text);
+  const d = arr?.[0]?.aggregation_date ? String(arr[0].aggregation_date).slice(0, 10) : "";
+  return d || "";
+}
+
+async function getLatestAggregationDate(base, supabaseKey) {
+  // prioridade: ranking materializado
+  for (const r of RANKING_SOURCES) {
+    const d = await getLatestAggregationDateFrom(base, supabaseKey, r);
+    if (d) return { date: d, source: r };
   }
-  return "";
+  // fallback: agregações (para não ficar sem “último dia”)
+  const dAgg = await getLatestAggregationDateFrom(base, supabaseKey, AGG_SOURCE);
+  if (dAgg) return { date: dAgg, source: AGG_SOURCE };
+  return { date: "", source: "" };
+}
+
+async function fetchRankingMaterialized(base, supabaseKey, requestedDate, incoming) {
+  const limit = incoming.get("limit") || "20";
+  const order = incoming.get("order") || "score.desc";
+  const select = incoming.get("select") || "*";
+
+  const params = new URLSearchParams();
+  params.set("select", select);
+  params.set("order", order);
+  params.set("limit", limit);
+  params.set("aggregation_date", `eq.${requestedDate}`);
+
+  let lastErrorText = "";
+  for (const resource of RANKING_SOURCES) {
+    const target = `${base}/${resource}?${params.toString()}`;
+    const res = await sbFetch(target, supabaseKey);
+    const text = await res.text();
+
+    if (!res.ok) {
+      lastErrorText = text;
+      continue;
+    }
+
+    const parsed = safeJson(text);
+    const arr = Array.isArray(parsed) ? parsed : [];
+
+    // aqui é importante: se existir, usamos, mesmo que vazio (vazio significa “não tem ranking materializado”)
+    return { ok: true, data: arr, usedResource: resource, lastErrorText: "" };
+  }
+
+  return { ok: false, data: null, usedResource: "", lastErrorText };
+}
+
+async function fetchClubsMap(base, supabaseKey) {
+  // map club_id -> club_name
+  const q = new URLSearchParams();
+  q.set("select", "id,name,label,club_id");
+
+  const url = `${base}/${CLUBS_SOURCE}?${q.toString()}`;
+  const res = await sbFetch(url, supabaseKey);
+  const text = await res.text();
+  if (!res.ok) return new Map();
+
+  const arr = safeJson(text);
+  const map = new Map();
+
+  (Array.isArray(arr) ? arr : []).forEach((c) => {
+    const id = c?.id || c?.club_id;
+    const name = c?.name || c?.label;
+    if (id && name) map.set(String(id), String(name));
+  });
+
+  return map;
+}
+
+function buildRankingFromAggregations(aggRows, clubsMap, limit) {
+  // score: prefere volume_normalized (IAP), senão volume_total
+  const rows = (Array.isArray(aggRows) ? aggRows : [])
+    .map((r) => {
+      const clubId = r?.club_id ? String(r.club_id) : "";
+      const clubName = clubsMap.get(clubId) || r?.club_name || clubId || "—";
+
+      const score =
+        toNumber(r?.volume_normalized) ??
+        toNumber(r?.score) ??
+        toNumber(r?.volume_total) ??
+        null;
+
+      const volumeTotal = toNumber(r?.volume_total) ?? 0;
+      const sentiment = toNumber(r?.sentiment_score) ?? 0;
+
+      return {
+        aggregation_date: String(r?.aggregation_date || "").slice(0, 10),
+        club_id: clubId,
+        club_name: clubName,
+        score,
+        volume_total: volumeTotal,
+        sentiment_score: sentiment,
+      };
+    })
+    .filter((x) => x.club_id && x.club_name && x.club_name !== "—");
+
+  // ordena por score desc, nulls por último
+  rows.sort((a, b) => {
+    const x = a.score;
+    const y = b.score;
+    if (x === null && y === null) return 0;
+    if (x === null) return 1;
+    if (y === null) return -1;
+    return y - x;
+  });
+
+  const sliced = rows.slice(0, Math.max(1, Number(limit) || 20));
+
+  // rank_position com empate
+  let lastVal = null;
+  let lastRank = 0;
+  for (let i = 0; i < sliced.length; i += 1) {
+    const v = sliced[i].score;
+    const pos = i + 1;
+    if (v === null) {
+      sliced[i].rank_position = pos;
+    } else if (lastVal !== null && v === lastVal) {
+      sliced[i].rank_position = lastRank;
+    } else {
+      sliced[i].rank_position = pos;
+      lastRank = pos;
+      lastVal = v;
+    }
+  }
+
+  // compatibilidade com front
+  return sliced.map((item) => ({
+    ...item,
+    club: { name: item.club_name },
+  }));
 }
 
 export async function GET(req) {
@@ -57,146 +194,102 @@ export async function GET(req) {
     const supabaseKey = process.env.SUPABASE_SERVICE_KEY;
 
     if (!supabaseUrl || !supabaseKey) {
-      return jsonResp(
-        { error: "SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados" },
-        500
-      );
+      return jsonResp({ error: "SUPABASE_URL ou SUPABASE_SERVICE_KEY não configurados" }, 500);
     }
 
     const incoming = new URL(req.url).searchParams;
-
-    // detecta se o cliente informou "date" (não pode fazer fallback nesse caso)
-    const hadDateParam =
-      incoming.has("date") && (incoming.get("date") || "").trim() !== "";
-
-    // date opcional (YYYY-MM-DD). Se não vier, usa último dia.
-    let requestedDate = (incoming.get("date") || "").trim();
-    if (requestedDate && !/^\d{4}-\d{2}-\d{2}$/.test(requestedDate)) {
-      return jsonResp(
-        { error: "Parâmetro date deve estar no formato YYYY-MM-DD" },
-        400
-      );
-    }
-
     const base = supabaseUrl.replace(/\/$/, "") + "/rest/v1";
 
-    // resolve date quando não fornecida
+    const hadDateParam = incoming.has("date") && (incoming.get("date") || "").trim() !== "";
+
+    let requestedDate = (incoming.get("date") || "").trim();
+    if (requestedDate && !isYmd(requestedDate)) {
+      return jsonResp({ error: "Parâmetro date deve estar no formato YYYY-MM-DD" }, 400);
+    }
+
     if (!requestedDate) {
-      requestedDate = await getLatestAggregationDate(base, supabaseKey);
+      const latest = await getLatestAggregationDate(base, supabaseKey);
+      requestedDate = latest.date;
       if (!requestedDate) {
-        return jsonResp(
-          { error: "Não foi possível determinar a data mais recente do ranking" },
-          500
-        );
+        return jsonResp({ error: "Não foi possível determinar a data mais recente do ranking" }, 500);
       }
     }
 
-    const limit = incoming.get("limit") || "20";
-    const order = incoming.get("order") || "score.desc";
-    const select = incoming.get("select") || "*";
-
-    // filtra por aggregation_date = requestedDate
-    const params = new URLSearchParams();
-    params.set("select", select);
-    params.set("order", order);
-    params.set("limit", limit);
-    params.set("aggregation_date", `eq.${requestedDate}`);
-
-    const candidates = ["daily_ranking_with_names", "daily_ranking", "daily_rankings"];
-
-    let rankings = null;
-    let usedResource = "";
-    let lastErrorText = "";
-
-    // tenta buscar a data solicitada/resolvida
-    for (const resource of candidates) {
-      const target = `${base}/${resource}?${params.toString()}`;
-      const res = await sbFetch(target, supabaseKey);
-      const text = await res.text();
-
-      if (res.ok) {
-        const parsed = safeJson(text);
-        rankings = Array.isArray(parsed) ? parsed : [];
-        usedResource = resource;
-        break;
-      } else {
-        lastErrorText = text;
-      }
-    }
-
-    if (!rankings) {
+    // 1) tenta ranking materializado
+    const materialized = await fetchRankingMaterialized(base, supabaseKey, requestedDate, incoming);
+    if (!materialized.ok) {
       return jsonResp(
-        {
-          error: "Erro ao buscar daily_ranking (nenhuma fonte retornou ok)",
-          details: lastErrorText,
-        },
+        { error: "Erro ao buscar daily_ranking (nenhuma fonte retornou ok)", details: materialized.lastErrorText },
         500
       );
     }
 
-    // Se o cliente INFORMOU a data e não há dados, NÃO faz fallback:
-    // retorna vazio para o front saber que não existe “dia anterior”.
-    if (rankings.length === 0 && hadDateParam) {
-      return jsonResp({
-        resolved_date: requestedDate,
-        source: usedResource || "daily_ranking_with_names",
-        count: 0,
-        data: [],
-        note: "No data for requested date",
-      });
-    }
+    let usedSource = materialized.usedResource;
+    let rows = materialized.data;
 
-    // Se a data NÃO foi informada (modo padrão) e não há dados, faz fallback p/ último dia com dados
-    if (rankings.length === 0 && !hadDateParam) {
-      const fallbackDate = await getLatestAggregationDate(base, supabaseKey);
+    // 2) se não existe ranking materializado para a data, tenta gerar via daily_aggregations_v2
+    if (Array.isArray(rows) && rows.length === 0) {
+      // se o usuário passou date, NÃO fazemos fallback para “último dia” aqui; apenas geramos se houver agregações.
+      const limit = incoming.get("limit") || "20";
 
-      if (fallbackDate && fallbackDate !== requestedDate) {
-        const p2 = new URLSearchParams(params);
-        p2.set("aggregation_date", `eq.${fallbackDate}`);
+      // carrega agregações do dia
+      const p = new URLSearchParams();
+      p.set("select", "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score");
+      p.set("aggregation_date", `eq.${requestedDate}`);
 
-        rankings = null;
-        usedResource = "";
-        lastErrorText = "";
+      const urlAgg = `${base}/${AGG_SOURCE}?${p.toString()}`;
+      const resAgg = await sbFetch(urlAgg, supabaseKey);
+      const textAgg = await resAgg.text();
 
-        for (const resource of candidates) {
-          const target = `${base}/${resource}?${p2.toString()}`;
-          const res = await sbFetch(target, supabaseKey);
-          const text = await res.text();
+      if (resAgg.ok) {
+        const aggArr = safeJson(textAgg);
+        const clubsMap = await fetchClubsMap(base, supabaseKey);
 
-          if (res.ok) {
-            const parsed = safeJson(text);
-            rankings = Array.isArray(parsed) ? parsed : [];
-            usedResource = resource;
-            requestedDate = fallbackDate; // resolveu para data com dados
-            break;
-          } else {
-            lastErrorText = text;
+        const computed = buildRankingFromAggregations(aggArr, clubsMap, limit);
+
+        if (computed.length > 0) {
+          usedSource = AGG_SOURCE;
+          rows = computed;
+        }
+      }
+
+      // se ainda não achou nada e o usuário NÃO informou date, tenta resolver para último dia com dados em AGG_SOURCE
+      if (!hadDateParam && Array.isArray(rows) && rows.length === 0) {
+        const latestAgg = await getLatestAggregationDateFrom(base, supabaseKey, AGG_SOURCE);
+        if (latestAgg && latestAgg !== requestedDate) {
+          requestedDate = latestAgg;
+
+          const p2 = new URLSearchParams();
+          p2.set("select", "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score");
+          p2.set("aggregation_date", `eq.${requestedDate}`);
+
+          const urlAgg2 = `${base}/${AGG_SOURCE}?${p2.toString()}`;
+          const resAgg2 = await sbFetch(urlAgg2, supabaseKey);
+          const textAgg2 = await resAgg2.text();
+
+          if (resAgg2.ok) {
+            const aggArr2 = safeJson(textAgg2);
+            const clubsMap2 = await fetchClubsMap(base, supabaseKey);
+            const computed2 = buildRankingFromAggregations(aggArr2, clubsMap2, incoming.get("limit") || "20");
+            if (computed2.length > 0) {
+              usedSource = AGG_SOURCE;
+              rows = computed2;
+            }
           }
         }
       }
     }
 
-    if (!rankings) {
-      return jsonResp(
-        {
-          error: "Erro ao buscar daily_ranking (fallback falhou)",
-          details: lastErrorText,
-        },
-        500
-      );
-    }
-
-    // Mapeia club_name -> club: { name } para compatibilidade
-    const mapped = rankings.map((item) => {
-      if (item.club && item.club.name) return item;
-      if (item.club_name) return { ...item, club: { name: item.club_name } };
+    // compat: garante club: {name}
+    const mapped = (Array.isArray(rows) ? rows : []).map((item) => {
+      if (item?.club?.name) return item;
+      if (item?.club_name) return { ...item, club: { name: item.club_name } };
       return item;
     });
 
-    // devolve meta no envelope, mas mantém compatibilidade: também expõe array em "data"
     return jsonResp({
       resolved_date: requestedDate,
-      source: usedResource,
+      source: usedSource,
       count: mapped.length,
       data: mapped,
     });
