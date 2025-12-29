@@ -55,10 +55,8 @@ export default function ChartPanel({
         if (!club || club === '—' || value === null) return null;
 
         const rankPos = Number(rawItem?.rank_position) || idx + 1;
-
         const key = r?.__club_key || rawItem?.__club_key || normalizeClubKey(club);
 
-        // prev rank (para ↑/↓)
         let prevRank = null;
         if (prevMetricsMap && typeof prevMetricsMap.get === 'function') {
           const pm =
@@ -70,21 +68,10 @@ export default function ChartPanel({
           prevRank = pr !== null ? pr : null;
         }
 
-        // delta rank: positivo = subiu (melhorou)
-        // ex: prevRank=19, curr=1 => delta=18 (↑ 18)
         let rankDelta = null;
-        if (prevRank !== null) {
-          rankDelta = prevRank - rankPos;
-        }
+        if (prevRank !== null) rankDelta = prevRank - rankPos;
 
-        return {
-          club,
-          value,
-          rankPos,
-          key,
-          prevRank,
-          rankDelta,
-        };
+        return { club, value, rankPos, key, prevRank, rankDelta };
       })
       .filter(Boolean)
       .sort((a, b) => a.rankPos - b.rankPos)
@@ -108,7 +95,6 @@ export default function ChartPanel({
   }
 
   const barData = {
-    // labels aqui não serão exibidos (vamos desenhar dentro da barra)
     labels: clean.map((r) => r.club),
     datasets: [
       {
@@ -123,7 +109,6 @@ export default function ChartPanel({
     ],
   };
 
-  // Plugin custom: desenha texto dentro da barra
   const barInnerLabelsPlugin = {
     id: 'barInnerLabels',
     afterDatasetsDraw(chart) {
@@ -136,34 +121,27 @@ export default function ChartPanel({
       ctx.save();
       ctx.textBaseline = 'middle';
 
-      // fontes (ajuste fino)
-      const leftFont = '600 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
-      const rightFont = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const insideFont = '600 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
+      const outsideFont = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
         const row = clean[i];
         const value = dataset.data[i];
 
-        // coordenadas do retângulo da barra
-        // bar é um elemento; getProps é mais robusto em versões diferentes
-        const props = typeof bar.getProps === 'function'
-          ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
-          : bar;
+        const props =
+          typeof bar.getProps === 'function'
+            ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
+            : bar;
 
-        const xEnd = props.x;          // final da barra (direita)
-        const xStart = props.base;     // início da barra (esquerda)
+        const xEnd = props.x;      // fim da barra (direita)
+        const xStart = props.base; // início (esquerda)
         const yMid = props.y;
 
-        // padding interno
-        const padLeft = 10;
-        const padRight = 10;
+        const padIn = 10;
+        const padOut = 10;
 
-        // garante que desenhamos somente dentro da área útil
-        const leftX = Math.max(xStart + padLeft, chartArea.left + 4);
-        const rightX = Math.min(xEnd - padRight, chartArea.right - 4);
-
-        // label esquerda: "1° . Chapecoense ↑ 18"
+        // 1) TEXTO DENTRO DA BARRA: "20° . Botafogo ↑ 2"
         let trendTxt = '';
         if (row.rankDelta !== null) {
           const d = row.rankDelta;
@@ -171,35 +149,55 @@ export default function ChartPanel({
           else if (d < 0) trendTxt = `↓ ${Math.abs(d)}`;
           else trendTxt = '• 0';
         } else if (prevDateUsed) {
-          // existe prevDateUsed, mas sem match desse clube no dia anterior
           trendTxt = '• —';
         } else {
-          // sem dia anterior
           trendTxt = '';
         }
 
-        const leftText = `${row.rankPos}° . ${row.club}${trendTxt ? ' ' + trendTxt : ''}`;
+        const insideText = `${row.rankPos}° . ${row.club}${trendTxt ? ' ' + trendTxt : ''}`;
 
-        // label direita: "IAP: 78.59"
-        const rightText = `IAP: ${fmt2(value)}`;
+        // largura disponível dentro da barra
+        const innerLeft = Math.max(xStart + padIn, chartArea.left + 4);
+        const innerRight = Math.min(xEnd - padIn, chartArea.right - 4);
+        const innerWidth = innerRight - innerLeft;
 
-        // escolha de cor do texto (dentro da barra verde)
+        // desenha dentro só se couber minimamente (evita colisão visual)
+        ctx.font = insideFont;
         ctx.fillStyle = '#ffffff';
-
-        // desenha esquerda
-        ctx.font = leftFont;
-        // evita desenhar se a barra for curta demais
-        if (rightX - leftX > 80) {
-          ctx.fillText(leftText, leftX, yMid);
-        }
-
-        // desenha direita (alinhado à direita)
-        ctx.font = rightFont;
-        ctx.textAlign = 'right';
-        if (rightX - leftX > 60) {
-          ctx.fillText(rightText, rightX, yMid);
-        }
         ctx.textAlign = 'left';
+
+        if (innerWidth > 70) {
+          // se estiver apertado, reduz o conteúdo (sem trend) antes de omitir
+          let txt = insideText;
+          const fullW = ctx.measureText(txt).width;
+
+          if (fullW > innerWidth && trendTxt) {
+            txt = `${row.rankPos}° . ${row.club}`; // tira o trend
+          }
+          const w2 = ctx.measureText(txt).width;
+
+          if (w2 <= innerWidth) {
+            ctx.fillText(txt, innerLeft, yMid);
+          } else if (innerWidth > 90) {
+            // último recurso: abrevia clube
+            const short = `${row.rankPos}° . ${String(row.club).slice(0, 10)}…`;
+            if (ctx.measureText(short).width <= innerWidth) {
+              ctx.fillText(short, innerLeft, yMid);
+            }
+          }
+        }
+
+        // 2) VALOR FORA DA BARRA (à direita): "78.59"
+        // posiciona fora, mas respeita chartArea
+        const outX = Math.min(xEnd + padOut, chartArea.right - 2);
+
+        ctx.font = outsideFont;
+        ctx.fillStyle = 'rgba(0,0,0,0.78)';
+        ctx.textAlign = 'left';
+
+        // se a barra estiver muito perto do limite direito, ainda assim tenta desenhar,
+        // mas sem estourar o chartArea (o clamp acima já protege)
+        ctx.fillText(fmt2(value), outX, yMid);
       }
 
       ctx.restore();
@@ -210,6 +208,10 @@ export default function ChartPanel({
     indexAxis: 'y',
     responsive: true,
     maintainAspectRatio: false,
+    layout: {
+      // espaço à direita para o valor fora da barra
+      padding: { right: 46 },
+    },
     plugins: {
       legend: { display: false },
       tooltip: {
@@ -228,17 +230,11 @@ export default function ChartPanel({
             const lines = [];
             lines.push(`IAP: ${fmt2(row.value)}`);
 
-            // rank delta
             if (prevDateUsed) {
-              if (row.rankDelta === null) {
-                lines.push(`Movimento vs ${prevDateUsed}: —`);
-              } else if (row.rankDelta > 0) {
-                lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
-              } else if (row.rankDelta < 0) {
-                lines.push(`Movimento vs ${prevDateUsed}: ↓ ${Math.abs(row.rankDelta)}`);
-              } else {
-                lines.push(`Movimento vs ${prevDateUsed}: 0`);
-              }
+              if (row.rankDelta === null) lines.push(`Movimento vs ${prevDateUsed}: —`);
+              else if (row.rankDelta > 0) lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
+              else if (row.rankDelta < 0) lines.push(`Movimento vs ${prevDateUsed}: ↓ ${Math.abs(row.rankDelta)}`);
+              else lines.push(`Movimento vs ${prevDateUsed}: 0`);
             }
 
             return lines;
@@ -248,7 +244,6 @@ export default function ChartPanel({
     },
     scales: {
       y: {
-        // vamos esconder ticks porque o texto já vai dentro da barra
         ticks: { display: false },
         grid: { display: false },
       },
@@ -264,8 +259,7 @@ export default function ChartPanel({
     <div style={{ height, width: '100%' }}>
       <Bar data={barData} options={barOptions} plugins={[barInnerLabelsPlugin]} />
       <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8 }}>
-        {prevDateUsed ? `Comparação: vs ${prevDateUsed}.` : 'Sem comparação (sem dia anterior).'}
-        {' '}Passe o mouse/toque nas barras para detalhes.
+        {prevDateUsed ? `Comparação: vs ${prevDateUsed}.` : 'Sem comparação (sem dia anterior).'} Passe o mouse/toque nas barras para detalhes.
       </div>
     </div>
   );
