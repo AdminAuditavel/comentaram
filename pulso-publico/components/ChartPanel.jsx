@@ -119,14 +119,14 @@ export default function ChartPanel({
     );
   }
 
-  // Opção A: cor única para todas as barras
+  // Opção A: cor única (forçada para todas as barras)
   const barData = {
     labels: clean.map((r) => r.club),
     datasets: [
       {
         label: 'IAP',
         data: clean.map((r) => r.value),
-        backgroundColor: primary,
+        backgroundColor: primary, // cor única
         borderWidth: 0,
         borderRadius: 10,
         barThickness: 18,
@@ -149,16 +149,10 @@ export default function ChartPanel({
       const insideFont = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const valueFont = '400 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
-      const dataIndexToBar = new Map();
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
-        const dataIndex = (bar && (bar.index ?? bar.dataIndex ?? bar._index)) ?? i;
-        if (!dataIndexToBar.has(dataIndex)) dataIndexToBar.set(dataIndex, bar);
-      }
-
-      for (const [dataIndex, bar] of dataIndexToBar.entries()) {
-        const idx = Number(dataIndex);
-        const row = clean[idx];
+        const dataIndex = i;
+        const row = clean[dataIndex];
         if (!row) continue;
 
         const props =
@@ -198,7 +192,7 @@ export default function ChartPanel({
         ctx.fillStyle = 'rgba(0,0,0,0.88)';
         ctx.textAlign = 'left';
 
-        const valueStr = fmt2(dataset.data[idx]);
+        const valueStr = fmt2(dataset.data[dataIndex]);
         ctx.fillText(valueStr, outX, yMid);
       }
 
@@ -206,7 +200,7 @@ export default function ChartPanel({
     },
   };
 
-  // Tooltip HTML externo (posicionamento a partir do centro da barra quando possível)
+  // Tooltip externo: posicionamento a partir da posição da barra (meta.data[dataIndex]) — gap 4px
   const externalTooltip = (context) => {
     const tooltip = context.tooltip;
     const chart = context.chart;
@@ -297,29 +291,37 @@ export default function ChartPanel({
 
     tooltipEl.innerHTML = `${titleHtml}${datesHtml}`;
 
-    // POSICIONAMENTO: preferir centro do elemento (quando disponível), senão caret
-    const canvasRect = chart.canvas.getBoundingClientRect();
+    // obtém meta e elemento da barra para posicionamento exato
+    const meta = chart.getDatasetMeta(0);
+    const bar = meta && meta.data && meta.data[dataIndex];
+    let sourceX = null;
+    let sourceY = null;
 
-    // tenta obter o elemento gráfico (a barra) do dataPoint — é mais preciso
-    const element = dataPoint && dataPoint.element;
-    let elX = null;
-    let elY = null;
-    if (element) {
-      // element.x / element.y devem existir em Chart.js v3+ para elementos do tipo rectangle
-      elX = (typeof element.x === 'number') ? element.x : (element.getCenterPoint ? element.getCenterPoint().x : null);
-      elY = (typeof element.y === 'number') ? element.y : (element.getCenterPoint ? element.getCenterPoint().y : null);
+    if (bar) {
+      const props = typeof bar.getProps === 'function'
+        ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
+        : bar;
+      // prefer props.x / props.y (centro da barra)
+      if (props && typeof props.x === 'number' && typeof props.y === 'number') {
+        sourceX = props.x;
+        sourceY = props.y;
+      } else if (bar && (bar.x || bar.y)) {
+        sourceX = bar.x ?? null;
+        sourceY = bar.y ?? null;
+      }
     }
 
+    // fallback para caret
     const caretX = tooltip.caretX ?? null;
     const caretY = tooltip.caretY ?? null;
+    if (sourceX === null) sourceX = caretX !== null ? caretX : (chart.canvas.width / 2);
+    if (sourceY === null) sourceY = caretY !== null ? caretY : (chart.canvas.height / 2);
 
-    const sourceX = (elX !== null ? elX : (caretX !== null ? caretX : canvasRect.width / 2));
-    const sourceY = (elY !== null ? elY : (caretY !== null ? caretY : canvasRect.height / 2));
+    const canvasRect = chart.canvas.getBoundingClientRect();
+    const targetLeft = canvasRect.left + window.scrollX + sourceX;
+    const targetTop = canvasRect.top + window.scrollY + sourceY;
 
-    const targetLeftBase = canvasRect.left + window.scrollX + sourceX;
-    const targetTopBase = canvasRect.top + window.scrollY + sourceY;
-
-    // dimensões do tooltip
+    // calcula dimensões do tooltip
     tooltipEl.style.left = '0px';
     tooltipEl.style.top = '0px';
     tooltipEl.style.opacity = '0';
@@ -329,17 +331,17 @@ export default function ChartPanel({
     const ttWidth = rect.width || 160;
     const ttHeight = rect.height || 40;
 
-    // centraliza horizontalmente sobre source
-    let left = targetLeftBase - ttWidth / 2;
+    // horizontal centered within viewport
+    let left = targetLeft - ttWidth / 2;
     const minLeft = window.scrollX + 8;
     const maxLeft = window.scrollX + window.innerWidth - ttWidth - 8;
     if (left < minLeft) left = minLeft;
     if (left > maxLeft) left = maxLeft;
 
-    // prefere acima, gap reduzido para 6px
-    const gap = 6;
-    const topAbove = targetTopBase - ttHeight - gap;
-    const topBelow = targetTopBase + gap;
+    // prefer above, gap reduzido para 4px
+    const gap = 4;
+    const topAbove = targetTop - ttHeight - gap;
+    const topBelow = targetTop + gap;
     const minTop = window.scrollY + 8;
     const maxTop = window.scrollY + window.innerHeight - ttHeight - 8;
 
@@ -349,7 +351,6 @@ export default function ChartPanel({
     } else if (topBelow <= maxTop) {
       top = topBelow;
     } else {
-      // clamp caso não caiba totalmente
       top = Math.min(Math.max(topAbove, minTop), maxTop);
     }
 
