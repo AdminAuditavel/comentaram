@@ -122,13 +122,11 @@ export default function ChartPanel({
 
   // Opção 2: cor por movimento (uma cor por barra)
   const bgColors = clean.map((r) => {
-    // sem comparação -> cor padrão
     if (!prevDateUsed) return primary;
-    // rankDelta priorizado
-    if (r.rankDelta === null || r.rankDelta === undefined) return '#6c9bd1'; // neutro (azul suave)
-    if (r.rankDelta > 0) return '#1b7f3a'; // subiu -> verde
-    if (r.rankDelta < 0) return '#c62828'; // caiu -> vermelho
-    return '#8d8d8d'; // empate/zero -> cinza
+    if (r.rankDelta === null || r.rankDelta === undefined) return '#6c9bd1';
+    if (r.rankDelta > 0) return '#1b7f3a';
+    if (r.rankDelta < 0) return '#c62828';
+    return '#8d8d8d';
   });
 
   const barData = {
@@ -180,8 +178,6 @@ export default function ChartPanel({
         const innerRight = Math.min(xEnd - padIn, chartArea.right - 6);
         const innerWidth = innerRight - innerLeft;
 
-        // Se a cor da barra for muito clara (não prevista aqui), poderíamos trocar o fillStyle.
-        // Como usamos tons escuros/suficientes, mantemos branco interno.
         ctx.font = insideFont;
         ctx.fillStyle = '#ffffff';
         ctx.textAlign = 'left';
@@ -213,7 +209,7 @@ export default function ChartPanel({
     },
   };
 
-  // tooltip externo anexado ao body (position: fixed)
+  // tooltip externo ANEXADO AO BODY (position: fixed) — posição calculada corretamente em viewport coords
   const externalTooltip = (context) => {
     const tooltip = context.tooltip;
     const chart = context.chart;
@@ -304,36 +300,36 @@ export default function ChartPanel({
 
     tooltipEl.innerHTML = `${titleHtml}${datesHtml}`;
 
-    // posicionamento exato baseado na barra (meta.data[dataIndex])
+    // posicionamento: usar coords da barra (meta.data[dataIndex]) convertidas para viewport (getBoundingClientRect)
     const meta = chart.getDatasetMeta(0);
     const bar = meta && meta.data && meta.data[dataIndex];
-    let sourceClientX = null;
-    let sourceClientY = null;
+    let sourceViewportX = null;
+    let sourceViewportY = null;
 
     if (bar) {
       const props =
         typeof bar.getProps === 'function'
           ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
           : bar;
+      const canvasRect = chart.canvas.getBoundingClientRect();
       if (props && typeof props.x === 'number' && typeof props.y === 'number') {
-        const canvasRect = chart.canvas.getBoundingClientRect();
-        sourceClientX = canvasRect.left + props.x;
-        sourceClientY = canvasRect.top + props.y;
+        sourceViewportX = canvasRect.left + props.x;
+        sourceViewportY = canvasRect.top + props.y;
       } else if (bar && (bar.x || bar.y)) {
-        const canvasRect = chart.canvas.getBoundingClientRect();
-        sourceClientX = canvasRect.left + (bar.x ?? 0);
-        sourceClientY = canvasRect.top + (bar.y ?? 0);
+        sourceViewportX = canvasRect.left + (bar.x ?? 0);
+        sourceViewportY = canvasRect.top + (bar.y ?? 0);
       }
     }
 
-    if (sourceClientX === null || sourceClientY === null) {
+    if (sourceViewportX === null || sourceViewportY === null) {
       const canvasRect = chart.canvas.getBoundingClientRect();
       const caretX = tooltip.caretX ?? canvasRect.width / 2;
       const caretY = tooltip.caretY ?? canvasRect.height / 2;
-      sourceClientX = canvasRect.left + caretX;
-      sourceClientY = canvasRect.top + caretY;
+      sourceViewportX = canvasRect.left + caretX;
+      sourceViewportY = canvasRect.top + caretY;
     }
 
+    // calcular dimensões do tooltip
     tooltipEl.style.left = '0px';
     tooltipEl.style.top = '0px';
     tooltipEl.style.opacity = '0';
@@ -343,15 +339,16 @@ export default function ChartPanel({
     const ttWidth = rect.width || 160;
     const ttHeight = rect.height || 40;
 
-    let left = sourceClientX - ttWidth / 2;
+    // left/top em viewport coords (já são viewport-based)
+    let left = sourceViewportX - ttWidth / 2;
     const minLeft = 8;
     const maxLeft = window.innerWidth - ttWidth - 8;
     if (left < minLeft) left = minLeft;
     if (left > maxLeft) left = maxLeft;
 
     const gap = 6;
-    const topAbove = sourceClientY - ttHeight - gap;
-    const topBelow = sourceClientY + gap;
+    const topAbove = sourceViewportY - ttHeight - gap;
+    const topBelow = sourceViewportY + gap;
     const minTop = 8;
     const maxTop = window.innerHeight - ttHeight - 8;
 
@@ -360,14 +357,9 @@ export default function ChartPanel({
     else if (topBelow <= maxTop) top = topBelow;
     else top = Math.min(Math.max(topAbove, minTop), maxTop);
 
-    // position: fixed -> usar coordenadas de viewport
-    // convert sourceClient* (which are client coords relative to document) to viewport coords
-    // but since we used client rect + window scroll, they are already absolute; for fixed we use viewport values:
-    const viewportLeft = left - window.scrollX;
-    const viewportTop = top - window.scrollY;
-
-    tooltipEl.style.left = `${Math.round(viewportLeft)}px`;
-    tooltipEl.style.top = `${Math.round(viewportTop)}px`;
+    // position: fixed usa coordenadas de viewport diretamente
+    tooltipEl.style.left = `${Math.round(left)}px`;
+    tooltipEl.style.top = `${Math.round(top)}px`;
     tooltipEl.style.opacity = '1';
     tooltipEl.style.pointerEvents = 'none';
   };
