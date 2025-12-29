@@ -1,4 +1,3 @@
-//pulso-publico/components/Ranking.jsx
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
