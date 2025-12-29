@@ -1,4 +1,3 @@
-//pulso-publico/components/Ranking.jsx
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
@@ -14,7 +13,7 @@ import HeaderLogo from './HeaderLogo';
 import InsightsPanel from './InsightsPanel';
 import TopMovers from './TopMovers';
 import ChartPanel from './ChartPanel';
-import RankingTable from './RankingTable';
+// RankingTable removido — não é mais utilizado
 
 import {
   getClubName,
@@ -373,7 +372,7 @@ export default function Ranking() {
     return baseRows.filter((r) => r.club === selectedClub);
   }, [baseRows, selectedClub]);
 
-  // tableItems para Insights/TopMovers/RankingTable (com compat)
+  // tableItems para Insights/TopMovers (antes também usado pela tabela)
   const tableItems = useMemo(() => {
     if (selectedClub) return rows.map((r) => r.rawItem);
     return Array.isArray(rankedData) ? rankedData : [];
@@ -812,10 +811,7 @@ export default function Ranking() {
           />
         </div>
 
-        {/* Table */}
-        <div style={{ marginTop: 12 }}>
-          <RankingTable tableItems={tableItems} renderTrend={renderTrend} linkClub={linkClub} />
-        </div>
+        {/* tabela removida */}
 
         {/* Comparação (card) */}
         <section className={ctrlStyles.topicCard} style={{ marginTop: 12 }}>
