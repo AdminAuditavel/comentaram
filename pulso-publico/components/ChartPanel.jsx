@@ -47,12 +47,14 @@ export default function ChartPanel({
 
         const rankPos = Number(rawItem?.rank_position) || idx + 1;
 
+        // CHAVE ESTÁVEL: club_id primeiro
         const key =
           (rawItem?.club_id ? String(rawItem.club_id) : null) ||
           (r?.__club_key ? String(r.__club_key) : null) ||
           (rawItem?.__club_key ? String(rawItem.__club_key) : null) ||
           normalizeClubKey(club);
 
+        // ---- try prevRankMap first (preferred) ----
         let prevRank = null;
         if (prevRankMap && typeof prevRankMap.get === 'function') {
           const prRaw =
@@ -63,6 +65,7 @@ export default function ChartPanel({
           prevRank = pr !== null ? pr : null;
         }
 
+        // ---- fallback: prevMetricsMap may contain rank in payload ----
         if ((prevRank === null || prevRank === undefined) && prevMetricsMap && typeof prevMetricsMap.get === 'function') {
           const pm =
             prevMetricsMap.get(key) ??
@@ -80,12 +83,6 @@ export default function ChartPanel({
       .sort((a, b) => a.rankPos - b.rankPos)
       .slice(0, Math.max(1, Number(topN) || 20));
   }, [rows, topN, prevMetricsMap, prevRankMap]);
-
-  // quick console to confirm this module runs
-  try {
-    // eslint-disable-next-line no-console
-    console.debug('ChartPanel mounted', { cleanLen: clean.length, prevDateUsed, prevRankMapSample: prevRankMap && typeof prevRankMap.entries === 'function' ? Array.from(prevRankMap.entries()).slice(0,10) : null });
-  } catch (e) {}
 
   if (loading) {
     return (
@@ -133,7 +130,7 @@ export default function ChartPanel({
       const valueFont = '800 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const trendFont = '700 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
-      // Build map dataIndex -> bar element
+      // Build a map from dataIndex -> bar element (explicit)
       const dataIndexToBar = new Map();
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
@@ -141,9 +138,9 @@ export default function ChartPanel({
         if (!dataIndexToBar.has(dataIndex)) dataIndexToBar.set(dataIndex, bar);
       }
 
+      // Iterate over entries in the map (dataIndex -> bar)
       for (const [dataIndex, bar] of dataIndexToBar.entries()) {
-        const idx = Number(dataIndex);
-        const row = clean[idx];
+        const row = clean[dataIndex];
         if (!row) continue;
 
         const props =
@@ -151,11 +148,11 @@ export default function ChartPanel({
             ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
             : bar;
 
-        const xEnd = props.x;
-        const xStart = props.base;
+        const xEnd = props.x;      // fim da barra
+        const xStart = props.base; // início da barra
         const yMid = props.y;
 
-        // texto dentro da barra
+        // ===== (B) TEXTO dentro da barra (posição + clube) =====
         const padIn = 10;
         const innerLeft = Math.max(xStart + padIn, chartArea.left + 4);
         const innerRight = Math.min(xEnd - padIn, chartArea.right - 4);
@@ -166,17 +163,20 @@ export default function ChartPanel({
         ctx.textAlign = 'left';
 
         const insideText = `${row.rankPos}° ${row.club}`;
+
         if (innerWidth > 70) {
           const fullW = ctx.measureText(insideText).width;
           if (fullW <= innerWidth) {
             ctx.fillText(insideText, innerLeft, yMid);
           } else if (innerWidth > 90) {
             const short = `${row.rankPos}° ${String(row.club).slice(0, 12)}…`;
-            if (ctx.measureText(short).width <= innerWidth) ctx.fillText(short, innerLeft, yMid);
+            if (ctx.measureText(short).width <= innerWidth) {
+              ctx.fillText(short, innerLeft, yMid);
+            }
           }
         }
 
-        // valor à direita
+        // ===== (C) VALOR fora da barra (direita): número =====
         const padOut = 10;
         const outX = Math.min(xEnd + padOut, chartArea.right - 2);
 
@@ -184,10 +184,10 @@ export default function ChartPanel({
         ctx.fillStyle = 'rgba(0,0,0,0.78)';
         ctx.textAlign = 'left';
 
-        const valueStr = fmt2(dataset.data[idx]);
+        const valueStr = fmt2(dataset.data[dataIndex]);
         ctx.fillText(valueStr, outX, yMid);
 
-        // tendência após valor (se existir rankDelta)
+        // ===== (D) TENDÊNCIA APÓS O VALOR =====
         if (prevDateUsed && row.rankDelta !== null && row.rankDelta !== undefined) {
           let trendText = '';
           let trendColor = 'rgba(0,0,0,0.45)';
@@ -222,6 +222,7 @@ export default function ChartPanel({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
+      // espaço à direita para o valor + tendência
       padding: { left: 12, right: 120 },
     },
     plugins: {
@@ -238,14 +239,17 @@ export default function ChartPanel({
           label: (ctx) => {
             const idx = ctx.dataIndex;
             const row = clean[idx];
+
             const lines = [];
             lines.push(`IAP: ${fmt2(row.value)}`);
+
             if (prevDateUsed) {
               if (row.rankDelta === null) lines.push(`Movimento vs ${prevDateUsed}: —`);
               else if (row.rankDelta > 0) lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
               else if (row.rankDelta < 0) lines.push(`Movimento vs ${prevDateUsed}: ↓ ${Math.abs(row.rankDelta)}`);
               else lines.push(`Movimento vs ${prevDateUsed}: 0`);
             }
+
             return lines;
           },
         },
@@ -269,20 +273,6 @@ export default function ChartPanel({
       <Bar data={barData} options={barOptions} plugins={[labelsPlugin]} />
       <div style={{ fontSize: 12, opacity: 0.75, marginTop: 8 }}>
         {prevDateUsed ? `Comparação: vs ${prevDateUsed}.` : 'Sem comparação (sem dia anterior).'} Passe o mouse/toque nas barras para detalhes.
-      </div>
-
-      {/* Painel de debug visível (remova após depuração) */}
-      <div style={{ marginTop: 12, border: '1px solid rgba(0,0,0,0.06)', padding: 8, borderRadius: 6, background: '#fafafa' }}>
-        <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>DEBUG ChartPanel (remover depois)</div>
-        <div style={{ fontSize: 12 }}>
-          <strong>prevDateUsed:</strong> {String(prevDateUsed || '—')}
-        </div>
-        <details style={{ marginTop: 8 }}>
-          <summary>clean (index → club, value, rankPos, rankDelta)</summary>
-          <pre style={{ maxHeight: 220, overflow: 'auto' }}>
-            {JSON.stringify(clean.map((c, idx) => ({ idx, club: c.club, value: c.value, rankPos: c.rankPos, rankDelta: c.rankDelta })), null, 2)}
-          </pre>
-        </details>
       </div>
     </div>
   );
