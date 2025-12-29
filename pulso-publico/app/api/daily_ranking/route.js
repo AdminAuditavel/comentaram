@@ -30,8 +30,6 @@ function safeJson(text) {
 }
 
 const RANKING_SOURCES = ["daily_ranking_with_names", "daily_ranking", "daily_rankings"];
-
-// ajuste se o nome do recurso for diferente
 const AGG_SOURCE = "daily_aggregations_v2";
 const CLUBS_SOURCE = "clubs";
 
@@ -54,6 +52,7 @@ async function getLatestAggregationDateFrom(base, supabaseKey, resource) {
   const res = await sbFetch(url, supabaseKey);
   const text = await res.text();
   if (!res.ok) return "";
+
   const arr = safeJson(text);
   const d = arr?.[0]?.aggregation_date ? String(arr[0].aggregation_date).slice(0, 10) : "";
   return d || "";
@@ -90,6 +89,7 @@ async function fetchRankingMaterialized(base, supabaseKey, requestedDate, incomi
       lastErrorText = text;
       continue;
     }
+
     const parsed = safeJson(text);
     const arr = Array.isArray(parsed) ? parsed : [];
     return { ok: true, data: arr, usedResource: resource, lastErrorText: "" };
@@ -99,9 +99,10 @@ async function fetchRankingMaterialized(base, supabaseKey, requestedDate, incomi
 }
 
 async function fetchClubsMap(base, supabaseKey) {
-  // fallback: map club_id -> club_name (depende do schema; tentamos o máximo)
+  // clubs schema confirmado:
+  // id, name_official, name_short, ...
   const q = new URLSearchParams();
-  q.set("select", "*");
+  q.set("select", "id,name_short,name_official");
   q.set("limit", "5000");
 
   const url = `${base}/${CLUBS_SOURCE}?${q.toString()}`;
@@ -113,91 +114,34 @@ async function fetchClubsMap(base, supabaseKey) {
   const map = new Map();
 
   (Array.isArray(arr) ? arr : []).forEach((c) => {
-    const id =
-      c?.id ??
-      c?.club_id ??
-      c?.uuid ??
-      c?.public_id ??
-      null;
-
-    const name =
-      c?.name ??
-      c?.label ??
-      c?.club_name ??
-      c?.display_name ??
-      c?.short_name ??
-      null;
-
-    if (id && name) map.set(String(id), String(name));
+    const id = c?.id ? String(c.id) : "";
+    const name = (c?.name_short || c?.name_official) ? String(c.name_short || c.name_official) : "";
+    if (id && name) map.set(id, name);
   });
 
   return map;
 }
 
-function extractEmbeddedName(r) {
-  // tenta padrões comuns de embed
-  // ex: r.clubs = { name }, ou r.club = { name }, ou r.clubs = [{name}]
-  const v =
-    r?.clubs?.name ??
-    r?.club?.name ??
-    r?.clubs?.[0]?.name ??
-    r?.club?.[0]?.name ??
-    null;
-  return v ? String(v) : "";
-}
+async function fetchAggregations(base, supabaseKey, requestedDate, limit) {
+  const p = new URLSearchParams();
+  p.set("select", "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score");
+  p.set("aggregation_date", `eq.${requestedDate}`);
+  p.set("limit", String(Math.max(1, Number(limit) || 20)));
 
-async function fetchAggregationsWithName(base, supabaseKey, requestedDate, limit) {
-  // Tentativas de embed (o PostgREST aceita sintaxes diferentes dependendo do relacionamento)
-  const selectVariants = [
-    "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score,clubs(name)",
-    "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score,club(name)",
-    "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score,clubs:clubs(name)",
-    "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score,club:clubs(name)",
-  ];
+  const url = `${base}/${AGG_SOURCE}?${p.toString()}`;
+  const res = await sbFetch(url, supabaseKey);
+  const text = await res.text();
+  if (!res.ok) return [];
 
-  for (const sel of selectVariants) {
-    const p = new URLSearchParams();
-    p.set("select", sel);
-    p.set("aggregation_date", `eq.${requestedDate}`);
-    p.set("limit", String(Math.max(1, Number(limit) || 20)));
-
-    const url = `${base}/${AGG_SOURCE}?${p.toString()}`;
-    const res = await sbFetch(url, supabaseKey);
-    const text = await res.text();
-
-    if (!res.ok) continue;
-
-    const arr = safeJson(text);
-    if (Array.isArray(arr)) return arr;
-  }
-
-  // fallback sem embed
-  const p0 = new URLSearchParams();
-  p0.set("select", "club_id,aggregation_date,volume_total,volume_normalized,sentiment_score");
-  p0.set("aggregation_date", `eq.${requestedDate}`);
-  p0.set("limit", String(Math.max(1, Number(limit) || 20)));
-
-  const url0 = `${base}/${AGG_SOURCE}?${p0.toString()}`;
-  const res0 = await sbFetch(url0, supabaseKey);
-  const text0 = await res0.text();
-  if (!res0.ok) return [];
-
-  const arr0 = safeJson(text0);
-  return Array.isArray(arr0) ? arr0 : [];
+  const arr = safeJson(text);
+  return Array.isArray(arr) ? arr : [];
 }
 
 function buildRankingFromAggregations(aggRows, clubsMap, limit) {
   const rows = (Array.isArray(aggRows) ? aggRows : [])
     .map((r) => {
       const clubId = r?.club_id ? String(r.club_id) : "";
-
-      // 1) tenta embed
-      const embeddedName = extractEmbeddedName(r);
-
-      // 2) tenta map
-      const mappedName = clubsMap.get(clubId);
-
-      const clubName = embeddedName || mappedName || r?.club_name || clubId || "—";
+      const clubName = clubsMap.get(clubId) || clubId || "—";
 
       const score =
         toNumber(r?.volume_normalized) ??
@@ -279,7 +223,7 @@ export async function GET(req) {
       }
     }
 
-    // 1) ranking materializado
+    // 1) tenta fontes materializadas (daily_ranking*)
     const materialized = await fetchRankingMaterialized(base, supabaseKey, requestedDate, incoming);
     if (!materialized.ok) {
       return jsonResp(
@@ -291,31 +235,36 @@ export async function GET(req) {
     let usedSource = materialized.usedResource;
     let rows = materialized.data;
 
-    // 2) fallback para agregações quando materializado não existir para a data
+    // 2) se não tiver linhas para a data, calcula via daily_aggregations_v2 + clubs
     if (Array.isArray(rows) && rows.length === 0) {
       const limit = incoming.get("limit") || "20";
 
-      // carrega agregações já tentando embed de nome
-      const aggArr = await fetchAggregationsWithName(base, supabaseKey, requestedDate, limit);
+      const [aggRows, clubsMap] = await Promise.all([
+        fetchAggregations(base, supabaseKey, requestedDate, limit),
+        fetchClubsMap(base, supabaseKey),
+      ]);
 
-      if (Array.isArray(aggArr) && aggArr.length > 0) {
-        const clubsMap = await fetchClubsMap(base, supabaseKey);
-        const computed = buildRankingFromAggregations(aggArr, clubsMap, limit);
+      if (Array.isArray(aggRows) && aggRows.length > 0) {
+        const computed = buildRankingFromAggregations(aggRows, clubsMap, limit);
         if (computed.length > 0) {
           usedSource = AGG_SOURCE;
           rows = computed;
         }
       }
 
-      // se usuário NÃO passou date e não achou nada, resolve para último dia com dados em AGG_SOURCE
+      // se usuário NÃO passou date e ainda não achou nada, resolve para último dia com dados em daily_aggregations_v2
       if (!hadDateParam && Array.isArray(rows) && rows.length === 0) {
         const latestAgg = await getLatestAggregationDateFrom(base, supabaseKey, AGG_SOURCE);
         if (latestAgg && latestAgg !== requestedDate) {
           requestedDate = latestAgg;
-          const aggArr2 = await fetchAggregationsWithName(base, supabaseKey, requestedDate, limit);
-          if (Array.isArray(aggArr2) && aggArr2.length > 0) {
-            const clubsMap2 = await fetchClubsMap(base, supabaseKey);
-            const computed2 = buildRankingFromAggregations(aggArr2, clubsMap2, limit);
+
+          const [aggRows2, clubsMap2] = await Promise.all([
+            fetchAggregations(base, supabaseKey, requestedDate, limit),
+            fetchClubsMap(base, supabaseKey),
+          ]);
+
+          if (Array.isArray(aggRows2) && aggRows2.length > 0) {
+            const computed2 = buildRankingFromAggregations(aggRows2, clubsMap2, limit);
             if (computed2.length > 0) {
               usedSource = AGG_SOURCE;
               rows = computed2;
@@ -325,7 +274,6 @@ export async function GET(req) {
       }
     }
 
-    // compat final
     const mapped = (Array.isArray(rows) ? rows : []).map((item) => {
       if (item?.club?.name) return item;
       if (item?.club_name) return { ...item, club: { name: item.club_name } };
