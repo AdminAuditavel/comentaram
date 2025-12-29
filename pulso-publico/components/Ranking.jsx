@@ -1,3 +1,4 @@
+//pulso-publico/components/Ranking.jsx
 'use client';
 
 import { useMemo, useState, useEffect, useRef } from 'react';
@@ -559,7 +560,7 @@ export default function Ranking() {
   }
 
   /* ========== compare A/B (series) — dedupe por clube ==========
-     Resumo A->B: normaliza itens A y B para buildAbSummary conseguir achar nomes + iap.
+     Resumo A->B: normaliza itens A e B para buildAbSummary conseguir achar nomes + iap.
   */
   const compareFetchCtrlRef = useRef(null);
 
@@ -837,6 +838,7 @@ export default function Ranking() {
             rows={rows}
             loading={rankingLoading}
             prevMetricsMap={prevMetricsMap}
+            prevRankMap={prevRankMap}
             prevDateUsed={prevDateUsed}
           />
         </div>
@@ -858,7 +860,7 @@ export default function Ranking() {
             </div>
 
             {/* Linha única: Data A / Data B / seletor / botão */}
-            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center', flexWrap: 'wrap' }>
               {/* Data A */}
               <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
                 <span
@@ -875,7 +877,7 @@ export default function Ranking() {
               </div>
 
               {/* Data B */}
-              <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }}>
+              <div style={{ fontSize: 12, display: 'flex', gap: 8, alignItems: 'center' }>
                 <span
                   style={{
                     width: 14,
