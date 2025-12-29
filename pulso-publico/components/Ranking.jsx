@@ -809,6 +809,7 @@ export default function Ranking() {
             prevMetricsMap={prevMetricsMap}
             prevRankMap={prevRankMap}
             prevDateUsed={prevDateUsed}
+            effectiveDate={effectiveDate}
           />
         </div>
 
