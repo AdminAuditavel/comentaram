@@ -6,6 +6,7 @@ import { Bar } from 'react-chartjs-2';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
 import { MANUAL_PALETTE } from '../lib/rankingUtils';
 import ctrlStyles from './controls.module.css';
+import '../styles/chart-tooltip.css'; // adicione este import para carregar o CSS sugerido
 
 function toNumber(x) {
   if (x === null || x === undefined || x === '') return null;
@@ -119,14 +120,14 @@ export default function ChartPanel({
     );
   }
 
-  // Opção A: cor única (forçada para todas as barras)
+  // cor única (Opção A)
   const barData = {
     labels: clean.map((r) => r.club),
     datasets: [
       {
         label: 'IAP',
         data: clean.map((r) => r.value),
-        backgroundColor: primary, // cor única
+        backgroundColor: primary,
         borderWidth: 0,
         borderRadius: 10,
         barThickness: 18,
@@ -200,17 +201,18 @@ export default function ChartPanel({
     },
   };
 
-  // Tooltip externo: posicionamento a partir da posição da barra (meta.data[dataIndex]) — gap 4px
+  // tooltip externo: ANEXADO AO BODY e position: fixed
   const externalTooltip = (context) => {
     const tooltip = context.tooltip;
     const chart = context.chart;
-    const parent = chart && chart.canvas ? chart.canvas.parentNode : document.body;
+    const body = document.body;
 
-    let tooltipEl = parent.querySelector('.chartjs-custom-tooltip');
+    let tooltipEl = body.querySelector('.chartjs-custom-tooltip');
     if (!tooltipEl) {
       tooltipEl = document.createElement('div');
       tooltipEl.className = 'chartjs-custom-tooltip';
-      tooltipEl.style.position = 'absolute';
+      // estilos básicos (aplicados também por chart-tooltip.css)
+      tooltipEl.style.position = 'fixed'; // fixed para não ser cortado
       tooltipEl.style.pointerEvents = 'none';
       tooltipEl.style.transition = 'all .06s ease';
       tooltipEl.style.background = 'rgba(255,255,255,0.98)';
@@ -224,7 +226,7 @@ export default function ChartPanel({
       tooltipEl.style.zIndex = 9999;
       tooltipEl.style.border = '1px solid rgba(0,0,0,0.06)';
       tooltipEl.style.boxShadow = '0 8px 20px rgba(0,0,0,0.08)';
-      parent.appendChild(tooltipEl);
+      body.appendChild(tooltipEl);
     }
 
     if (tooltip.opacity === 0) {
@@ -291,37 +293,39 @@ export default function ChartPanel({
 
     tooltipEl.innerHTML = `${titleHtml}${datesHtml}`;
 
-    // obtém meta e elemento da barra para posicionamento exato
+    // posicionamento EXATO: baseado no elemento da barra (meta.data[dataIndex])
     const meta = chart.getDatasetMeta(0);
     const bar = meta && meta.data && meta.data[dataIndex];
-    let sourceX = null;
-    let sourceY = null;
+    let sourceClientX = null;
+    let sourceClientY = null;
 
     if (bar) {
-      const props = typeof bar.getProps === 'function'
-        ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
-        : bar;
-      // prefer props.x / props.y (centro da barra)
+      const props =
+        typeof bar.getProps === 'function'
+          ? bar.getProps(['x', 'y', 'base', 'width', 'height'], true)
+          : bar;
       if (props && typeof props.x === 'number' && typeof props.y === 'number') {
-        sourceX = props.x;
-        sourceY = props.y;
+        // props.x/props.y são coordenadas em canvas; convertemos para client usando canvas rect
+        const canvasRect = chart.canvas.getBoundingClientRect();
+        sourceClientX = canvasRect.left + props.x;
+        sourceClientY = canvasRect.top + props.y;
       } else if (bar && (bar.x || bar.y)) {
-        sourceX = bar.x ?? null;
-        sourceY = bar.y ?? null;
+        const canvasRect = chart.canvas.getBoundingClientRect();
+        sourceClientX = canvasRect.left + (bar.x ?? 0);
+        sourceClientY = canvasRect.top + (bar.y ?? 0);
       }
     }
 
-    // fallback para caret
-    const caretX = tooltip.caretX ?? null;
-    const caretY = tooltip.caretY ?? null;
-    if (sourceX === null) sourceX = caretX !== null ? caretX : (chart.canvas.width / 2);
-    if (sourceY === null) sourceY = caretY !== null ? caretY : (chart.canvas.height / 2);
+    // fallback para caretX/caretY se não obtivemos a posição da barra
+    if (sourceClientX === null || sourceClientY === null) {
+      const canvasRect = chart.canvas.getBoundingClientRect();
+      const caretX = tooltip.caretX ?? canvasRect.width / 2;
+      const caretY = tooltip.caretY ?? canvasRect.height / 2;
+      sourceClientX = canvasRect.left + caretX;
+      sourceClientY = canvasRect.top + caretY;
+    }
 
-    const canvasRect = chart.canvas.getBoundingClientRect();
-    const targetLeft = canvasRect.left + window.scrollX + sourceX;
-    const targetTop = canvasRect.top + window.scrollY + sourceY;
-
-    // calcula dimensões do tooltip
+    // força calcular dimensões do tooltip
     tooltipEl.style.left = '0px';
     tooltipEl.style.top = '0px';
     tooltipEl.style.opacity = '0';
@@ -331,29 +335,26 @@ export default function ChartPanel({
     const ttWidth = rect.width || 160;
     const ttHeight = rect.height || 40;
 
-    // horizontal centered within viewport
-    let left = targetLeft - ttWidth / 2;
-    const minLeft = window.scrollX + 8;
-    const maxLeft = window.scrollX + window.innerWidth - ttWidth - 8;
+    // calcula left/top relativos ao viewport (position: fixed)
+    let left = sourceClientX - ttWidth / 2;
+    const minLeft = 8;
+    const maxLeft = window.innerWidth - ttWidth - 8;
     if (left < minLeft) left = minLeft;
     if (left > maxLeft) left = maxLeft;
 
-    // prefer above, gap reduzido para 4px
-    const gap = 4;
-    const topAbove = targetTop - ttHeight - gap;
-    const topBelow = targetTop + gap;
-    const minTop = window.scrollY + 8;
-    const maxTop = window.scrollY + window.innerHeight - ttHeight - 8;
+    const gap = 6;
+    const topAbove = sourceClientY - ttHeight - gap;
+    const topBelow = sourceClientY + gap;
+    const minTop = 8;
+    const maxTop = window.innerHeight - ttHeight - 8;
 
     let top;
-    if (topAbove >= minTop) {
-      top = topAbove;
-    } else if (topBelow <= maxTop) {
-      top = topBelow;
-    } else {
-      top = Math.min(Math.max(topAbove, minTop), maxTop);
-    }
+    // prefer acima (se couber), senão abaixo, senão clamp
+    if (topAbove >= minTop) top = topAbove;
+    else if (topBelow <= maxTop) top = topBelow;
+    else top = Math.min(Math.max(topAbove, minTop), maxTop);
 
+    // aplica (position: fixed usa coordenadas de viewport)
     tooltipEl.style.left = `${Math.round(left)}px`;
     tooltipEl.style.top = `${Math.round(top)}px`;
     tooltipEl.style.opacity = '1';
