@@ -132,8 +132,14 @@ export default function ChartPanel({
 
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
-        const row = clean[i];
-        const value = dataset.data[i];
+
+        // Determina o dataIndex real do elemento (compatível com várias versões/element shapes)
+        const dataIndex = (bar && (bar.index ?? bar.dataIndex ?? bar._index)) ?? i;
+
+        const row = clean[dataIndex];
+        const value = dataset.data[dataIndex];
+
+        if (!row) continue;
 
         const props =
           typeof bar.getProps === 'function'
@@ -155,7 +161,7 @@ export default function ChartPanel({
         let trendColor = 'rgba(0,0,0,0.45)';
 
         if (prevDateUsed) {
-          if (row.rankDelta === null) {
+          if (row.rankDelta === null || row.rankDelta === undefined) {
             trendText = '—';
           } else if (row.rankDelta > 0) {
             trendText = `↑ ${row.rankDelta}`;
