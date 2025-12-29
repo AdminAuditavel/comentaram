@@ -4,7 +4,7 @@
 import React, { useMemo } from 'react';
 import { Bar } from 'react-chartjs-2';
 import LoadingChartPlaceholder from './LoadingChartPlaceholder';
-import { MANUAL_PALETTE, formatDateBR } from '../lib/rankingUtils';
+import { MANUAL_PALETTE } from '../lib/rankingUtils';
 import ctrlStyles from './controls.module.css';
 
 function toNumber(x) {
@@ -24,16 +24,23 @@ function fmt2(x) {
   return n.toFixed(2);
 }
 
+function formatDateBRdash(isoYmd) {
+  if (!isoYmd) return '';
+  const s = String(isoYmd).slice(0, 10);
+  const m = /^(\d{4})-(\d{2})-(\d{2})$/.exec(s);
+  if (!m) return s;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
 export default function ChartPanel({
   rows = [],
   loading = false,
-  // altura base (usada apenas como fallback)
   height = 640,
   topN = 20,
   prevMetricsMap = null,
   prevRankMap = null,
   prevDateUsed = '',
-  effectiveDate = '', // nova prop: data efetiva/base do ranking (ISO YYYY-MM-DD)
+  effectiveDate = '',
 }) {
   const primary = MANUAL_PALETTE[0] ?? '#337d26';
 
@@ -129,6 +136,7 @@ export default function ChartPanel({
     ],
   };
 
+  // plugin que desenha labels/valores no canvas (sem tendência)
   const labelsPlugin = {
     id: 'labelsPlugin',
     afterDatasetsDraw(chart) {
@@ -143,7 +151,6 @@ export default function ChartPanel({
       const insideFont = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const valueFont = '400 12px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
-      // mapeia explicitamente dataIndex -> elemento gráfico
       const dataIndexToBar = new Map();
       for (let i = 0; i < meta.data.length; i += 1) {
         const bar = meta.data[i];
@@ -187,7 +194,7 @@ export default function ChartPanel({
           }
         }
 
-        // VALOR À DIREITA (apenas o valor; sem desenho de tendência aqui)
+        // VALOR À DIREITA
         const padOut = 12;
         const outX = Math.min(xEnd + padOut, chartArea.right - 8);
 
@@ -203,50 +210,137 @@ export default function ChartPanel({
     },
   };
 
+  // Tooltip externo (HTML) — mostra apenas:
+  // 1) linha título: "1° Chapecoense ↑18" (seta colorida e em negrito)
+  // 2) linha datas: "29-12-2025 vs 28-12-2025"
+  const externalTooltip = (context) => {
+    // contexto do tooltip
+    const tooltip = context.tooltip;
+    const chart = context.chart;
+    const parent = chart && chart.canvas ? chart.canvas.parentNode : document.body;
+
+    // cria elemento se não existir
+    let tooltipEl = parent.querySelector('.chartjs-custom-tooltip');
+    if (!tooltipEl) {
+      tooltipEl = document.createElement('div');
+      tooltipEl.className = 'chartjs-custom-tooltip';
+      tooltipEl.style.position = 'absolute';
+      tooltipEl.style.pointerEvents = 'none';
+      tooltipEl.style.transition = 'all .08s ease';
+      tooltipEl.style.transform = 'translate(-50%, -100%)';
+      tooltipEl.style.background = 'rgba(0,0,0,0.85)';
+      tooltipEl.style.color = '#fff';
+      tooltipEl.style.padding = '8px 10px';
+      tooltipEl.style.borderRadius = '6px';
+      tooltipEl.style.fontFamily = "ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, Arial";
+      tooltipEl.style.fontSize = '13px';
+      tooltipEl.style.lineHeight = '1.2';
+      tooltipEl.style.whiteSpace = 'nowrap';
+      tooltipEl.style.zIndex = 9999;
+      parent.appendChild(tooltipEl);
+    }
+
+    // esconder se tooltip vazio
+    if (tooltip.opacity === 0) {
+      tooltipEl.style.opacity = '0';
+      tooltipEl.style.pointerEvents = 'none';
+      return;
+    }
+
+    // pega datapoint principal
+    const dataPoint = tooltip.dataPoints && tooltip.dataPoints[0];
+    if (!dataPoint) {
+      tooltipEl.style.opacity = '0';
+      return;
+    }
+
+    const dataIndex = dataPoint.dataIndex;
+    const row = clean[dataIndex];
+    // texto da seta: prioridade rankDelta, senão fallback por prevScore (IAP diff)
+    let arrowText = '';
+    let arrowColor = '#666';
+    if (row) {
+      if (row.rankDelta !== null && row.rankDelta !== undefined) {
+        if (row.rankDelta > 0) {
+          arrowText = `↑${row.rankDelta}`;
+          arrowColor = '#1b7f3a';
+        } else if (row.rankDelta < 0) {
+          arrowText = `↓${Math.abs(row.rankDelta)}`;
+          arrowColor = '#c62828';
+        } else {
+          arrowText = '0';
+          arrowColor = '#666';
+        }
+      } else if (row.prevScore !== null && row.prevScore !== undefined) {
+        const ds = Number(row.value - row.prevScore);
+        if (!Number.isNaN(ds)) {
+          if (ds > 0) {
+            arrowText = `↑${ds.toFixed(2)}`;
+            arrowColor = '#1b7f3a';
+          } else if (ds < 0) {
+            arrowText = `↓${Math.abs(ds).toFixed(2)}`;
+            arrowColor = '#c62828';
+          } else {
+            arrowText = '0';
+            arrowColor = '#666';
+          }
+        }
+      }
+    }
+
+    // datas formatadas (dd-mm-YYYY)
+    const baseLabel = effectiveDate ? formatDateBRdash(String(effectiveDate).slice(0, 10)) : '';
+    const prevLabel = prevDateUsed ? formatDateBRdash(String(prevDateUsed).slice(0, 10)) : '';
+
+    // monta HTML: título em negrito, seta colorida em <strong>
+    const titleText = row ? `${row.rankPos}° ${row.club}` : (chart.data.labels && chart.data.labels[dataIndex]) || '';
+    const arrowHtml = arrowText ? `<strong style="color: ${arrowColor}; margin-left:8px; font-weight:700;">${arrowText}</strong>` : '';
+    const titleHtml = `<div style="font-weight:700; display:flex; gap:8px; align-items:center;">${escapeHtml(titleText)}${arrowHtml}</div>`;
+
+    let datesHtml = '';
+    if (baseLabel && prevLabel) {
+      datesHtml = `<div style="font-weight:500; margin-top:4px; opacity:0.95;">${escapeHtml(baseLabel)} vs ${escapeHtml(prevLabel)}</div>`;
+    } else if (baseLabel) {
+      datesHtml = `<div style="font-weight:500; margin-top:4px; opacity:0.95;">${escapeHtml(baseLabel)}</div>`;
+    } else if (prevLabel) {
+      datesHtml = `<div style="font-weight:500; margin-top:4px; opacity:0.95;">vs ${escapeHtml(prevLabel)}</div>`;
+    }
+
+    tooltipEl.innerHTML = `${titleHtml}${datesHtml}`;
+
+    // posiciona o tooltip próximo ao ponto (usando caretX/caretY)
+    const canvasRect = chart.canvas.getBoundingClientRect();
+    const top = canvasRect.top + window.scrollY + tooltip.caretY;
+    const left = canvasRect.left + window.scrollX + tooltip.caretX;
+
+    tooltipEl.style.left = `${left}px`;
+    tooltipEl.style.top = `${top}px`;
+    tooltipEl.style.opacity = '1';
+  };
+
+  // helper para escapar HTML (segurança)
+  function escapeHtml(str) {
+    if (!str) return '';
+    return String(str)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
   const barOptions = {
     indexAxis: 'y',
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      // padding right reduzido; tendência aparece só no tooltip
       padding: { left: 12, right: 48 },
     },
     plugins: {
       legend: { display: false },
       tooltip: {
-        enabled: true,
-        callbacks: {
-          title: (items) => {
-            if (!items?.length) return '';
-            const idx = items[0].dataIndex;
-            const row = clean[idx];
-            return `${row.rankPos}° ${row.club}`;
-          },
-          label: (ctx) => {
-            const idx = ctx.dataIndex;
-            const row = clean[idx];
-            const lines = [];
-            lines.push(`IAP: ${fmt2(row.value)}`);
-            if (prevDateUsed) {
-              if (row.rankDelta === null) {
-                // fallback por prevScore no tooltip quando não há rankDelta
-                if (row.prevScore !== null && row.prevScore !== undefined) {
-                  const ds = Number((row.value - row.prevScore));
-                  if (!Number.isNaN(ds)) {
-                    lines.push(`Movimento vs ${prevDateUsed}: ${ds > 0 ? `↑ ${ds.toFixed(2)}` : ds < 0 ? `↓ ${Math.abs(ds).toFixed(2)}` : '0'}`);
-                  } else {
-                    lines.push(`Movimento vs ${prevDateUsed}: —`);
-                  }
-                } else {
-                  lines.push(`Movimento vs ${prevDateUsed}: —`);
-                }
-              } else if (row.rankDelta > 0) lines.push(`Movimento vs ${prevDateUsed}: ↑ ${row.rankDelta}`);
-              else if (row.rankDelta < 0) lines.push(`Movimento vs ${prevDateUsed}: ↓ ${Math.abs(row.rankDelta)}`);
-              else lines.push(`Movimento vs ${prevDateUsed}: 0`);
-            }
-            return lines;
-          },
-        },
+        enabled: false, // desativa tooltip padrão
+        external: externalTooltip,
       },
     },
     scales: {
@@ -262,21 +356,7 @@ export default function ChartPanel({
     },
   };
 
-  // altura do card: ocupa quase todo o viewport para dar efeito "full screen card"
-  const cardHeight = `calc(100vh - 140px)`; // ajuste se necessário
-
-  // Formata as datas para BR (se disponíveis)
-  const baseLabel = effectiveDate ? formatDateBR(String(effectiveDate).slice(0, 10)) : '';
-  const prevLabel = prevDateUsed ? formatDateBR(String(prevDateUsed).slice(0, 10)) : '';
-
-  let comparisonLine = 'Sem comparação (sem dia anterior).';
-  if (baseLabel && prevLabel) {
-    comparisonLine = `Comparação: ${baseLabel} (base) vs ${prevLabel} (anterior).`;
-  } else if (baseLabel) {
-    comparisonLine = `Data: ${baseLabel}.`;
-  } else if (prevLabel) {
-    comparisonLine = `Comparação: vs ${prevLabel}.`;
-  }
+  const cardHeight = `calc(100vh - 140px)`;
 
   return (
     <section className={ctrlStyles.topicCard} style={{ height: cardHeight, display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -287,7 +367,10 @@ export default function ChartPanel({
       </div>
 
       <div style={{ fontSize: 13, opacity: 0.8 }}>
-        {comparisonLine} Passe o mouse/toque nas barras para detalhes.
+        {effectiveDate ? `${formatDateBRdash(effectiveDate)} (base)` : ''}
+        {effectiveDate && prevDateUsed ? ' • ' : ''}
+        {prevDateUsed ? `${formatDateBRdash(prevDateUsed)} (anterior)` : ''}
+        {(!effectiveDate && !prevDateUsed) ? 'Sem comparação (sem dia anterior).' : '' } Passe o mouse/toque nas barras para detalhes.
       </div>
     </section>
   );
