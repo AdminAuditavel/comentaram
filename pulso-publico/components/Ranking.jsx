@@ -866,8 +866,15 @@ export default function Ranking() {
 
             {abSummary ? (
               <div style={{ border: '1px solid rgba(0,0,0,0.04)', borderRadius: 8, padding: 10 }}>
-                <div style={{ fontSize: 13, fontWeight: 700 }}>Resumo A → B</div>
-
+                <div style={{ fontSize: 13, fontWeight: 700 }}>
+                  Resumo A → B
+                </div>
+                
+                <div style={{ fontSize: 12, opacity: 0.75, marginTop: 2 }}>
+                  Data A: <strong>{formatDateBR(effectiveDate)}</strong>
+                  {' · '}
+                  Data B: <strong>{formatDateBR(compareDateB)}</strong>
+                </div>
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 10, marginTop: 8 }}>
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Entraram no Top 5 (B)</div>
