@@ -78,7 +78,6 @@ export default function ChartPanel({
           const ps = toNumber(pm?.score ?? pm?.iap ?? pm?.iap_score ?? pm?.value);
           prevScore = ps;
         } else if (prevMetricsMap && typeof prevMetricsMap.get === 'function') {
-          // mesmo que prevRank tenha sido encontrado, tentamos também capturar prevScore caso exista
           const pm =
             prevMetricsMap.get(key) ??
             prevMetricsMap.get(club) ??
@@ -142,7 +141,6 @@ export default function ChartPanel({
 
       const insideFont = '600 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
       const valueFont = '800 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
-      const trendFont = '700 13px ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial';
 
       // mapeia explicitamente dataIndex -> elemento gráfico
       const dataIndexToBar = new Map();
@@ -188,9 +186,8 @@ export default function ChartPanel({
           }
         }
 
-        // VALOR À DIREITA
+        // VALOR À DIREITA (apenas o valor; sem desenho de tendência aqui)
         const padOut = 12;
-        // reduzimos padding.right global, então outX ficará mais próximo da borda
         const outX = Math.min(xEnd + padOut, chartArea.right - 8);
 
         ctx.font = valueFont;
@@ -199,64 +196,6 @@ export default function ChartPanel({
 
         const valueStr = fmt2(dataset.data[idx]);
         ctx.fillText(valueStr, outX, yMid);
-
-        // TENTAR DESENHAR TENDÊNCIA:
-        // - prioridade: rankDelta (inteiro de posições)
-        // - fallback: prevScore -> deltaScore = row.value - prevScore (IAP), mostrar com 2 casas
-        let trendText = '';
-        let trendColor = null;
-        let drawTrend = false;
-
-        if (prevDateUsed) {
-          if (row.rankDelta !== null && row.rankDelta !== undefined) {
-            if (row.rankDelta > 0) {
-              trendText = `↑ ${row.rankDelta}`;
-              trendColor = '#1b7f3a';
-            } else if (row.rankDelta < 0) {
-              trendText = `↓ ${Math.abs(row.rankDelta)}`;
-              trendColor = '#c62828';
-            } else {
-              trendText = '0';
-              trendColor = 'rgba(0,0,0,0.55)';
-            }
-            drawTrend = true;
-          } else if (row.prevScore !== null && row.prevScore !== undefined) {
-            const ds = Number((row.value - row.prevScore));
-            if (!Number.isNaN(ds) && ds !== 0) {
-              if (ds > 0) {
-                trendText = `↑ ${ds.toFixed(2)}`;
-                trendColor = '#1b7f3a';
-              } else {
-                trendText = `↓ ${Math.abs(ds).toFixed(2)}`;
-                trendColor = '#c62828';
-              }
-              drawTrend = true;
-            } else if (ds === 0) {
-              trendText = '0';
-              trendColor = 'rgba(0,0,0,0.55)';
-              drawTrend = true;
-            }
-          }
-        }
-
-        if (drawTrend && trendText) {
-          // certifica-se de que o texto caiba no viewport do chart, senão ajusta a posição para a esquerda
-          const valueWidth = ctx.measureText(valueStr).width;
-          const trendWidth = ctx.measureText(trendText).width;
-          const spacing = 10;
-          let trendX = outX + valueWidth + spacing;
-          const maxRight = chartArea.right - 6;
-
-          if (trendX + trendWidth > maxRight) {
-            // se não couber à direita, tenta posicionar logo depois da barra (dentro do limite)
-            trendX = Math.max(outX + valueWidth + 6, maxRight - trendWidth);
-          }
-
-          ctx.font = trendFont;
-          ctx.fillStyle = trendColor || 'rgba(0,0,0,0.45)';
-          ctx.textAlign = 'left';
-          ctx.fillText(trendText, trendX, yMid);
-        }
       }
 
       ctx.restore();
@@ -268,8 +207,8 @@ export default function ChartPanel({
     responsive: true,
     maintainAspectRatio: false,
     layout: {
-      // reduzimos padding.right para evitar espaço em branco grande
-      padding: { left: 12, right: 92 },
+      // padding right reduzido; tendência aparece só no tooltip
+      padding: { left: 12, right: 48 },
     },
     plugins: {
       legend: { display: false },
@@ -289,7 +228,7 @@ export default function ChartPanel({
             lines.push(`IAP: ${fmt2(row.value)}`);
             if (prevDateUsed) {
               if (row.rankDelta === null) {
-                // se não há rankDelta, tentamos prevScore fallback no tooltip também
+                // fallback por prevScore no tooltip quando não há rankDelta
                 if (row.prevScore !== null && row.prevScore !== undefined) {
                   const ds = Number((row.value - row.prevScore));
                   if (!Number.isNaN(ds)) {
