@@ -953,7 +953,7 @@ export default function Ranking() {
             {abSummary ? (
               <div style={{ border: '1px solid rgba(0,0,0,0.04)', borderRadius: 8, padding: 10 }}>
                 <div style={{ fontSize: 13, fontWeight: 700 }}>Resumo A → B</div>
-
+            
                 <div
                   style={{
                     display: 'grid',
@@ -968,14 +968,14 @@ export default function Ranking() {
                       {abSummary.entered?.length ? abSummary.entered.join(', ') : 'Nenhuma mudança'}
                     </div>
                   </div>
-
+            
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Saíram do Top 5 (A)</div>
                     <div style={{ fontSize: 13 }}>
                       {abSummary.exited?.length ? abSummary.exited.join(', ') : 'Nenhuma mudança'}
                     </div>
                   </div>
-
+            
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Maior alta (Δ IAP)</div>
                     <div style={{ fontSize: 13 }}>
@@ -984,7 +984,7 @@ export default function Ranking() {
                         : 'Sem alta no Top 5'}
                     </div>
                   </div>
-
+            
                   <div>
                     <div style={{ fontSize: 12, opacity: 0.8 }}>Maior queda (Δ IAP)</div>
                     <div style={{ fontSize: 13 }}>
@@ -994,6 +994,8 @@ export default function Ranking() {
                     </div>
                   </div>
                 </div>
+              </div>
+            ) : null}
 
             <div style={{ fontSize: 12, opacity: 0.8, marginTop: 4 }}>
               Modo manual: selecione até 5 clubes para sobrepor as linhas no mesmo gráfico.
